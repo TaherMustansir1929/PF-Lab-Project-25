@@ -8,6 +8,7 @@
 #include <start-quiz.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 int main() {
   int choice;
@@ -60,6 +61,7 @@ int main() {
       break;
     case 3:
       end_quiz(state.session_id);
+      state.course = state.topic = NULL;
       break;
     case 4:
       health_check();
