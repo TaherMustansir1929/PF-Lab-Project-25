@@ -53,7 +53,7 @@ memory_t post_request(const char *url, const char *json_data)
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
 
     // Debugging
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    // curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
     res = curl_easy_perform(curl);
 

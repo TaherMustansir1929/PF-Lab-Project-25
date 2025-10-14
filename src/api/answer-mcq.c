@@ -1,5 +1,6 @@
 #include "answer-mcq.h"
 #include "ansi-colors.h"
+#include "db.h"
 #include "requests.h"
 #include <cjson/cJSON.h>
 #include <main.h>
@@ -81,6 +82,11 @@ void answer_mcq(state_t state) {
     printf("score: %d\n", response.score);
     printf("total_questions: %d\n", response.total_questions);
     printf("new_difficulty: %d\n", response.new_difficulty);
+
+    if (!db_update_score(response.total_questions, response.score,
+                         state.session_id)) {
+      fprintf(stderr, ANSI_FG_RED "FAILED to update score" ANSI_RESET "\n");
+    }
   }
 
   //=============
@@ -90,4 +96,5 @@ void answer_mcq(state_t state) {
   free(json_data);
   cJSON_Delete(json);
   curl_global_cleanup();
+  return;
 }

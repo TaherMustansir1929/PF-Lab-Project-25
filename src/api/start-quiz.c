@@ -1,7 +1,9 @@
 #include "start-quiz.h"
 #include "ansi-colors.h"
+#include "db.h"
 #include "requests.h"
 #include <cjson/cJSON.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,7 +99,7 @@ void start_quiz(state_t *state) {
   cJSON *json = cJSON_CreateObject();
   cJSON_AddStringToObject(json, "course", course);
   cJSON_AddStringToObject(json, "topic", topic);
-  cJSON_AddStringToObject(json, "user_id", "user123");
+  cJSON_AddStringToObject(json, "user_id", state->username);
   // Only add session_id if it exists and is not empty
   if (state->session_id && strlen(state->session_id) > 0) {
     cJSON_AddStringToObject(json, "session_id", state->session_id);
@@ -141,6 +143,14 @@ void start_quiz(state_t *state) {
     printf("B) %s\n", response.options.B);
     printf("C) %s\n", response.options.C);
     printf("D) %s\n" ANSI_RESET, response.options.D);
+
+    state->session_id = strdup(response.session_id);
+
+    if (!db_insert_quiz(state->username, state->course, state->topic, state->session_id)) {
+      fprintf(stderr, "! Failed to save data...\n");
+    } else {
+      printf("\n> Successfully added quiz to database...\n");
+    }
   }
 
   //=============

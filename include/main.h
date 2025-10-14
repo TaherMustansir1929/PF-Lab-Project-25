@@ -9,6 +9,7 @@
 
 typedef struct State {
   char *session_id;
+  char *username;
   char *course;
   char *topic;
 } state_t;
