@@ -73,9 +73,9 @@ bool db_get_quizes(const char *username) {
     snprintf(q.course, sizeof(q.course), "%s", sqlite3_column_text(stmt, 2));
     snprintf(q.topic, sizeof(q.topic), "%s", sqlite3_column_text(stmt, 3));
     q.total_questions = sqlite3_column_int(stmt, 4);
-    q.score = sqlite3_column_int(stmt, 5);
     snprintf(q.session_id, sizeof(q.session_id), "%s",
-             sqlite3_column_text(stmt, 6));
+             sqlite3_column_text(stmt, 5));
+    q.score = sqlite3_column_int(stmt, 6);
 
     printf("-------------id: %d----------------\n", q.id);
     printf(
