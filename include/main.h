@@ -12,6 +12,7 @@ typedef struct State {
   char *username;
   char *course;
   char *topic;
+  char *error;
 } state_t;
 
 #endif

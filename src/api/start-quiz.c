@@ -16,6 +16,16 @@ quiz_start_response_t parse_quiz_start_response(const char *json_str) {
     return quiz;
   }
 
+  // Check for error response with "detail" field
+  cJSON *detail = cJSON_GetObjectItemCaseSensitive(root, "detail");
+  if (cJSON_IsString(detail)) {
+    fprintf(stderr, ANSI_FG_RED "\nServer Error: %s\n" ANSI_RESET,
+            detail->valuestring);
+    quiz.message = strdup(detail->valuestring);
+    cJSON_Delete(root);
+    return quiz;
+  }
+
   cJSON *session_id = cJSON_GetObjectItemCaseSensitive(root, "session_id");
   if (cJSON_IsString(session_id))
     quiz.session_id = strdup(session_id->valuestring);
@@ -129,7 +139,29 @@ void start_quiz(state_t *state) {
     //===Parse Response===
     //====================
     quiz_start_response_t response = parse_quiz_start_response(chunk.response);
-    state->session_id = strdup(response.session_id);
+
+    // Check if we got a valid response (session_id is required for success)
+    if (response.session_id == NULL) {
+      fprintf(stderr, ANSI_FG_RED "\nFailed to start quiz. " ANSI_RESET);
+      if (response.message) {
+        fprintf(stderr, "Error: %s\n", response.message);
+        state->error = strdup(response.message); // Set error BEFORE freeing
+        free(response.message);
+      } else {
+        state->error = strdup("Unknown error occurred");
+      }
+      free(chunk.response);
+      free(json_data);
+      cJSON_Delete(json);
+      curl_global_cleanup();
+      return;
+    }
+
+    // Clear any previous error on success
+    if (state->error) {
+      free(state->error);
+      state->error = NULL;
+    }
 
     printf("\n--------Server Response---------\n");
     printf("session_id: %s\n", response.session_id);
@@ -137,7 +169,8 @@ void start_quiz(state_t *state) {
     printf("topic: %s\n", response.topic);
     printf("question_number: %d\n", response.question_number);
     printf("difficulty: %d\n", response.difficulty);
-    printf("message: %s\n", response.message);
+    if (response.message)
+      printf("message: %s\n", response.message);
     printf(ANSI_BG_GREEN "\nquestion: %s\n" ANSI_RESET, response.question);
     printf(ANSI_BG_BLUE "A) %s\n", response.options.A);
     printf("B) %s\n", response.options.B);
@@ -146,7 +179,8 @@ void start_quiz(state_t *state) {
 
     state->session_id = strdup(response.session_id);
 
-    if (!db_insert_quiz(state->username, state->course, state->topic, state->session_id)) {
+    if (!db_insert_quiz(state->username, state->course, state->topic,
+                        state->session_id)) {
       fprintf(stderr, "! Failed to save data...\n");
     } else {
       printf("\n> Successfully added quiz to database...\n");

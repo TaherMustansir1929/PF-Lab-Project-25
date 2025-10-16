@@ -60,7 +60,11 @@ int main() {
     case 1:
       while (1) {
         start_quiz(&state);
-        answer_mcq(state);
+        if (state.error == NULL) {
+          answer_mcq(state);
+        } else {
+          free(state.error);
+        }
 
         printf(ANSI_DIM
                "Do you wish to generate another MCQ? (Y/N): " ANSI_RESET);
@@ -80,7 +84,7 @@ int main() {
       break;
     case 3:
       end_quiz(state.session_id);
-      state.course = state.topic = NULL;
+      state.course = state.topic = state.session_id = NULL;
       break;
     case 4:
       health_check();
