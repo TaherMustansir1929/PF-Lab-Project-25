@@ -2,7 +2,7 @@
 
 ## Main prompt
 
-Create a gtk application in C language (you may use gtk3 or gtk4 depending on which one you can work on better). It is a basic Learning Management System which generates MCQs based on user specified topics. Alongside MCQ generation it also provides a student profile analyzer page.
+You are an expert UI developer in C programming language. You excel at creating responsive, interactive and appealing UI applications using the gtk framework in C language. Create a gtk application in C language (you may use gtk3 or gtk4 depending on which one you can work on better). It will be a basic Learning Management System which generates MCQs based on user specified topics. Alongside MCQ generation it also provides a student profile analyzer page.
 
 ## App details
 
@@ -15,7 +15,7 @@ The application would contain multiple pages including:
 
 ### Home Page
 
-Start with a student struct which stores all the useful information about the student including student_id, password, quiz_score, .A page where multiple buttons will be shown to the user including mcq generator page, profile analyzer page.
+Start with a student struct which stores all the useful information about the student including student_id, password, quiz_score, etc. A page where multiple redirection buttons will be shown to the user including mcq generator page, profile analyzer page which will redirect to the respective UI interfaces.
 
 ### Sign In Page
 
