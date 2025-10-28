@@ -25,7 +25,7 @@ typedef struct QuizStartResponse {
 
 } quiz_start_response_t;
 
-void generate_mcq(state_t *state);
+quiz_start_response_t generate_mcq(quiz_t *state, const char *student_id);
 quiz_start_response_t parse_quiz_start_response(const char *json_str);
 
 #endif /* GENERATE_MCQ_H */

@@ -49,10 +49,12 @@ end_quiz_response_t parse_end_quiz_response(const char *json_str) {
   return result;
 }
 
-void end_quiz(const char *user_id, const char *session_id) {
+end_quiz_response_t end_quiz(const char *user_id, const char *session_id) {
   char url[255];
   snprintf(url, sizeof(url), "%s%s/%s/%s", BASE_URL, END_QUIZ_URL, user_id,
            session_id);
+
+  end_quiz_response_t response = {0};
 
   memory_t chunk = get_request(url);
   if (chunk.err != NULL) {
@@ -64,7 +66,7 @@ void end_quiz(const char *user_id, const char *session_id) {
     //====================
     //===Parse Response===
     //====================
-    end_quiz_response_t response = parse_end_quiz_response(chunk.response);
+    response = parse_end_quiz_response(chunk.response);
 
     printf("\n--------QUIZ ENDED SUCCESSFULLY-------\n");
     printf("message: %s\n", response.message);
@@ -80,4 +82,5 @@ void end_quiz(const char *user_id, const char *session_id) {
 
   free(chunk.response);
   curl_global_cleanup();
+  return response;
 }

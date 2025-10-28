@@ -1,6 +1,6 @@
 #include "generate_mcq.h"
 #include "ansi-colors.h"
-#include "db.h"
+#include "main.h"
 #include "requests.h"
 #include <cjson/cJSON.h>
 #include <stdbool.h>
@@ -77,39 +77,21 @@ quiz_start_response_t parse_quiz_start_response(const char *json_str) {
   return quiz;
 }
 
-void generate_mcq(state_t *state) {
+quiz_start_response_t generate_mcq(quiz_t *state, const char *student_id) {
   char course[255], topic[255];
-  if (state->course && state->topic && strlen(state->course) > 0 &&
-      strlen(state->topic)) {
-    snprintf(course, sizeof(course), "%s", state->course);
-    snprintf(topic, sizeof(topic), "%s", state->topic);
-  } else {
-    //===========================
-    //===Read course and topic===
-    //===========================
-    printf("Enter course: ");
-    if (fgets(course, sizeof(course), stdin) == NULL) {
-      fprintf(stderr, "Error reading course\n");
-      return;
-    }
-    course[strcspn(course, "\n")] = '\0';
-    printf("Enter topic: ");
-    if (fgets(topic, sizeof(topic), stdin) == NULL) {
-      fprintf(stderr, "Error reading topic\n");
-      return;
-    }
-    topic[strcspn(topic, "\n")] = '\0';
+  snprintf(course, sizeof(course), "%s", state->course);
+  snprintf(topic, sizeof(topic), "%s", state->topic);
 
-    state->course = strdup(course);
-    state->topic = strdup(topic);
-  }
+  // Create empty response object
+  quiz_start_response_t response = {0};
+
   //========================
   //===Create JSON object===
   //========================
   cJSON *json = cJSON_CreateObject();
   cJSON_AddStringToObject(json, "course", course);
   cJSON_AddStringToObject(json, "topic", topic);
-  cJSON_AddStringToObject(json, "user_id", state->user_id);
+  cJSON_AddStringToObject(json, "user_id", student_id);
   // Only add session_id if it exists and is not empty
   if (state->session_id && strlen(state->session_id) > 0) {
     cJSON_AddStringToObject(json, "session_id", state->session_id);
@@ -120,7 +102,8 @@ void generate_mcq(state_t *state) {
   if (!json_data) {
     fprintf(stderr, "Error creating json string\n");
     cJSON_Delete(json);
-    return;
+    response.message = "Error creating json string\n";
+    return response;
   }
 
   // DEBUG: Print the JSON being sent
@@ -138,7 +121,7 @@ void generate_mcq(state_t *state) {
     //====================
     //===Parse Response===
     //====================
-    quiz_start_response_t response = parse_quiz_start_response(chunk.response);
+    response = parse_quiz_start_response(chunk.response);
 
     // Check if we got a valid response (session_id is required for success)
     if (response.session_id == NULL) {
@@ -154,7 +137,8 @@ void generate_mcq(state_t *state) {
       free(json_data);
       cJSON_Delete(json);
       curl_global_cleanup();
-      return;
+      response.message = "Failed to start quiz.\n";
+      return response;
     }
 
     // Clear any previous error on success
@@ -178,13 +162,6 @@ void generate_mcq(state_t *state) {
     printf("D) %s\n" ANSI_RESET, response.options.D);
 
     state->session_id = strdup(response.session_id);
-
-    if (!db_insert_quiz(state->user_id, state->course, state->topic,
-                        state->session_id)) {
-      fprintf(stderr, "! Failed to save data...\n");
-    } else {
-      printf("\n> Successfully added quiz to database...\n");
-    }
   }
 
   //=============
@@ -194,4 +171,6 @@ void generate_mcq(state_t *state) {
   free(json_data);
   cJSON_Delete(json);
   curl_global_cleanup();
+
+  return response;
 }

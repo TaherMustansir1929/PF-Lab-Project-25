@@ -1,62 +1,25 @@
+#include "end-quiz.h"
 #include "gio/gio.h"
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_STUDENTS 100
-#define ID_LENGTH 10
-#define PASSWORD_LENGTH 50
-#define MAX_MCQS 3
-#define OPTION_LENGTH 200
-#define QUESTION_LENGTH 300
-#define COURSE_LENGTH 100
-#define TOPIC_LENGTH 100
-#define DETAILS_LENGTH 500
-
-typedef struct {
-  char student_id[ID_LENGTH];
-  char password[PASSWORD_LENGTH];
-} student_struct;
-
-typedef struct {
-  char question[QUESTION_LENGTH];
-  char option_a[OPTION_LENGTH];
-  char option_b[OPTION_LENGTH];
-  char option_c[OPTION_LENGTH];
-  char option_d[OPTION_LENGTH];
-  char correct_option; // 'A', 'B', 'C', or 'D'
-} mcq_struct;
-
-typedef struct {
-  char course[COURSE_LENGTH];
-  char topic[TOPIC_LENGTH];
-  int current_question;
-  int score;
-} quiz_struct;
-
-typedef struct {
-  double cgpa;
-  char academic_details[DETAILS_LENGTH];
-  char career_goals[DETAILS_LENGTH];
-} profile_struct;
+#include "answer-mcq.h"
+#include "end-quiz.h"
+#include "generate_mcq.h"
+#include "main.h"
 
 // Global variables
-student_struct students[MAX_STUDENTS];
+student_t students[MAX_STUDENTS];
 int student_count = 0;
-student_struct current_student;
-quiz_struct current_quiz;
-profile_struct current_profile;
+student_t current_student;
+quiz_t current_quiz;
+profile_t current_profile;
+int mcq_count = 0;
 
 // Hardcoded MCQ array
-mcq_struct mcqs[MAX_MCQS] = {
-    {"What is the capital of France?", "London", "Berlin", "Paris", "Madrid",
-     'C'},
-    {"Which programming language is known for system programming?", "Python",
-     "C", "JavaScript", "Ruby", 'B'},
-    {"What does HTML stand for?", "Hyper Text Markup Language",
-     "High Tech Modern Language", "Home Tool Markup Language",
-     "Hyperlinks and Text Markup Language", 'A'}};
+mcq_t mcqs[MAX_MCQS] = {0};
 
 GtkWidget *stack;
 GtkWidget *id_entry;
@@ -269,17 +232,65 @@ void on_back_clicked(GtkWidget *widget, gpointer data) {
 }
 
 void on_logout_clicked(GtkWidget *widget, gpointer data) {
-  memset(&current_student, 0, sizeof(student_struct));
+  memset(&current_student, 0, sizeof(student_t));
   gtk_stack_set_visible_child_name(GTK_STACK(stack), "signup");
 }
 
 // Quiz functions
+
+// Helper function to reset all quiz state
+void reset_quiz_state() {
+  // Free dynamically allocated session_id if it exists
+  if (current_quiz.session_id) {
+    free(current_quiz.session_id);
+    current_quiz.session_id = NULL;
+  }
+
+  // Free dynamically allocated error if it exists
+  if (current_quiz.error) {
+    free(current_quiz.error);
+    current_quiz.error = NULL;
+  }
+
+  // Free all MCQ question and option strings
+  for (int i = 0; i < MAX_MCQS; i++) {
+    if (mcqs[i].question) {
+      free(mcqs[i].question);
+      mcqs[i].question = NULL;
+    }
+    if (mcqs[i].option_a) {
+      free(mcqs[i].option_a);
+      mcqs[i].option_a = NULL;
+    }
+    if (mcqs[i].option_b) {
+      free(mcqs[i].option_b);
+      mcqs[i].option_b = NULL;
+    }
+    if (mcqs[i].option_c) {
+      free(mcqs[i].option_c);
+      mcqs[i].option_c = NULL;
+    }
+    if (mcqs[i].option_d) {
+      free(mcqs[i].option_d);
+      mcqs[i].option_d = NULL;
+    }
+  }
+
+  // Reset the quiz struct
+  memset(&current_quiz, 0, sizeof(quiz_t));
+
+  // Reset MCQ array
+  memset(mcqs, 0, sizeof(mcqs));
+
+  // Reset MCQ counter
+  mcq_count = 0;
+}
 void display_question() {
   if (current_quiz.current_question >= MAX_MCQS) {
     return;
   }
 
-  mcq_struct *mcq = &mcqs[current_quiz.current_question];
+  mcq_t *mcq = &mcqs[mcq_count];
 
   char question_text[400];
   snprintf(question_text, sizeof(question_text),
@@ -314,6 +325,9 @@ gboolean start_quiz_delayed(gpointer user_data) {
 }
 
 void on_start_quiz_clicked(GtkWidget *widget, gpointer data) {
+  (void)widget; // Suppress unused parameter warning
+  (void)data;   // Suppress unused parameter warning
+
   const char *course = gtk_entry_get_text(GTK_ENTRY(course_entry));
   const char *topic = gtk_entry_get_text(GTK_ENTRY(topic_entry));
 
@@ -326,19 +340,32 @@ void on_start_quiz_clicked(GtkWidget *widget, gpointer data) {
     return;
   }
 
-  // Initialize quiz
+  // Reset quiz state from any previous session
+  reset_quiz_state();
+
+  // Initialize quiz with new course and topic
   strncpy(current_quiz.course, course, COURSE_LENGTH - 1);
   current_quiz.course[COURSE_LENGTH - 1] = '\0';
   strncpy(current_quiz.topic, topic, TOPIC_LENGTH - 1);
   current_quiz.topic[TOPIC_LENGTH - 1] = '\0';
-  current_quiz.current_question = 0;
-  current_quiz.score = 0;
 
   // Show loading
   show_loading_dialog("Loading quiz...\nPreparing questions...");
 
+  quiz_start_response_t response =
+      generate_mcq(&current_quiz, current_student.student_id);
+
+  current_quiz.session_id = response.session_id;
+  current_quiz.current_question = response.question_number;
+
+  mcq_t current_mcq = {response.question, response.options.A,
+                       response.options.B, response.options.C,
+                       response.options.D};
+
+  mcqs[mcq_count] = current_mcq;
+
   // Schedule delayed quiz start (2 seconds)
-  g_timeout_add(2000, start_quiz_delayed, NULL);
+  start_quiz_delayed(NULL);
 }
 
 void on_submit_answer_clicked(GtkWidget *widget, gpointer data) {
@@ -364,25 +391,26 @@ void on_submit_answer_clicked(GtkWidget *widget, gpointer data) {
   }
 
   // Check answer
-  mcq_struct *mcq = &mcqs[current_quiz.current_question];
-  gboolean is_correct = (selected_option == mcq->correct_option);
+  answer_mcq_response_t response = answer_mcq(
+      current_quiz.session_id, current_student.student_id, selected_option);
+  gboolean is_correct = (response.is_correct);
 
-  if (is_correct) {
-    current_quiz.score++;
-  }
+  // Show feedback - with NULL check for response.feedback
+  char feedback[400];
+  const char *feedback_text =
+      response.feedback ? response.feedback : "No feedback available";
 
-  // Show feedback
-  char feedback[200];
   if (is_correct) {
     snprintf(feedback, sizeof(feedback),
-             "✓ Correct!\n\nYour answer: %c\nScore: %d/%d", selected_option,
-             current_quiz.score, current_quiz.current_question + 1);
+             "✓ Correct!\n\nYour answer: %c\nScore: %d/%d\nFeedback: %s",
+             selected_option, response.score, response.total_questions,
+             feedback_text);
   } else {
-    snprintf(
-        feedback, sizeof(feedback),
-        "✗ Incorrect!\n\nYour answer: %c\nCorrect answer: %c\nScore: %d/%d",
-        selected_option, mcq->correct_option, current_quiz.score,
-        current_quiz.current_question + 1);
+    snprintf(feedback, sizeof(feedback),
+             "✗ Incorrect!\n\nYour answer: %c\nScore: "
+             "%d/%d\nFeedback: %s",
+             selected_option, response.score, response.total_questions,
+             feedback_text);
   }
 
   GtkWidget *dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL,
@@ -392,15 +420,22 @@ void on_submit_answer_clicked(GtkWidget *widget, gpointer data) {
   gtk_dialog_run(GTK_DIALOG(dialog));
   gtk_widget_destroy(dialog);
 
-  // Move to next question
+  // Increment question counter
   current_quiz.current_question++;
 
+  // Check if quiz is finished (reached MAX_MCQS questions)
   if (current_quiz.current_question >= MAX_MCQS) {
+    end_quiz_response_t end_response =
+        end_quiz(current_student.student_id, current_quiz.session_id);
     // Quiz finished
-    char final_msg[200];
+    char final_msg[400];
     snprintf(final_msg, sizeof(final_msg),
-             "Quiz Completed!\n\nFinal Score: %d/%d\n\nCourse: %s\nTopic: %s",
-             current_quiz.score, MAX_MCQS, current_quiz.course,
+             "Quiz Completed!\n\nFinal Score: %d/%d\nAccuracy: %d%%\nFinal "
+             "Difficulty: %d\n\nCourse: %s\nTopic: %s",
+             end_response.final_results.score,
+             end_response.final_results.total_questions,
+             end_response.final_results.accuracy,
+             end_response.final_results.final_difficulty, current_quiz.course,
              current_quiz.topic);
 
     GtkWidget *final_dialog =
@@ -409,17 +444,56 @@ void on_submit_answer_clicked(GtkWidget *widget, gpointer data) {
     gtk_dialog_run(GTK_DIALOG(final_dialog));
     gtk_widget_destroy(final_dialog);
 
-    // Reset quiz
+    // Free response strings
+    if (response.session_id)
+      free(response.session_id);
+    if (response.feedback)
+      free(response.feedback);
+    if (end_response.message)
+      free(end_response.message);
+    if (end_response.final_results.session_id)
+      free(end_response.final_results.session_id);
+
+    // Reset all quiz state
+    reset_quiz_state();
+
+    // Reset quiz UI
     gtk_widget_hide(quiz_content_box);
     gtk_widget_show_all(quiz_setup_box);
     gtk_entry_set_text(GTK_ENTRY(course_entry), "");
     gtk_entry_set_text(GTK_ENTRY(topic_entry), "");
   } else {
+    // Get next question from API
+    show_loading_dialog("Loading next question...");
+
+    quiz_start_response_t next_response =
+        generate_mcq(&current_quiz, current_student.student_id);
+
+    // Store next question
+    mcq_count++;
+    if (mcq_count < MAX_MCQS) {
+      mcq_t next_mcq = {next_response.question, next_response.options.A,
+                        next_response.options.B, next_response.options.C,
+                        next_response.options.D};
+      mcqs[mcq_count] = next_mcq;
+    }
+
+    close_loading_dialog();
+
+    // Free current response strings
+    if (response.session_id)
+      free(response.session_id);
+    if (response.feedback)
+      free(response.feedback);
+
     display_question();
   }
 }
 
 void on_end_quiz_clicked(GtkWidget *widget, gpointer data) {
+  (void)widget; // Suppress unused parameter warning
+  (void)data;   // Suppress unused parameter warning
+
   char confirm_msg[200];
   snprintf(confirm_msg, sizeof(confirm_msg),
            "Are you sure you want to end the quiz?\n\nCurrent Score: %d/%d",
@@ -433,6 +507,35 @@ void on_end_quiz_clicked(GtkWidget *widget, gpointer data) {
   gtk_widget_destroy(dialog);
 
   if (response == GTK_RESPONSE_YES) {
+    end_quiz_response_t end_response =
+        end_quiz(current_student.student_id, current_quiz.session_id);
+
+    // Final dialog
+    char final_msg[400];
+    snprintf(final_msg, sizeof(final_msg),
+             "Quiz Ended!\n\nFinal Score: %d/%d\nAccuracy: %d%%\nFinal "
+             "Difficulty: %d\n\nCourse: %s\nTopic: %s",
+             end_response.final_results.score,
+             end_response.final_results.total_questions,
+             end_response.final_results.accuracy,
+             end_response.final_results.final_difficulty, current_quiz.course,
+             current_quiz.topic);
+
+    GtkWidget *final_dialog =
+        gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO,
+                               GTK_BUTTONS_OK, "%s", final_msg);
+    gtk_dialog_run(GTK_DIALOG(final_dialog));
+    gtk_widget_destroy(final_dialog);
+
+    // Free response strings
+    if (end_response.message)
+      free(end_response.message);
+    if (end_response.final_results.session_id)
+      free(end_response.final_results.session_id);
+
+    // Reset all quiz state
+    reset_quiz_state();
+
     // Reset quiz UI
     gtk_widget_hide(quiz_content_box);
     gtk_widget_show_all(quiz_setup_box);

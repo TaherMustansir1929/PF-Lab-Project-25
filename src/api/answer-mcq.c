@@ -1,6 +1,5 @@
 #include "answer-mcq.h"
 #include "ansi-colors.h"
-#include "db.h"
 #include "requests.h"
 #include <cjson/cJSON.h>
 #include <main.h>
@@ -42,21 +41,25 @@ answer_mcq_response_t parse_answer_mcq_response(const char *json_str) {
   return result;
 }
 
-void answer_mcq(state_t state) {
+answer_mcq_response_t answer_mcq(const char *session_id, const char *user_id,
+                                 char ans) {
+
+  // Create buffer for answer character
   char answer[2];
-  printf("\n" ANSI_BRIGHT_FG_CYAN "Enter you answer: " ANSI_RESET);
-  snprintf(answer, sizeof(answer), "%c", getchar());
+  snprintf(answer, sizeof(answer), "%c", ans);
+  // Create empty response object
+  answer_mcq_response_t response = {0};
 
   cJSON *json = cJSON_CreateObject();
-  cJSON_AddStringToObject(json, "session_id", state.session_id);
-  cJSON_AddStringToObject(json, "user_id", state.user_id);
+  cJSON_AddStringToObject(json, "session_id", session_id);
+  cJSON_AddStringToObject(json, "user_id", user_id);
   cJSON_AddStringToObject(json, "answer", answer);
 
   char *json_data = cJSON_PrintUnformatted(json);
   if (!json_data) {
     fprintf(stderr, "Error creating json string\n");
     cJSON_Delete(json);
-    return;
+    return response;
   }
 
   printf("\nJSON BEING SENT: %s", json_data);
@@ -73,7 +76,7 @@ void answer_mcq(state_t state) {
     //====================
     //===Parse Response===
     //====================
-    answer_mcq_response_t response = parse_answer_mcq_response(chunk.response);
+    response = parse_answer_mcq_response(chunk.response);
 
     printf("\n--------ANSWER FEEDBACK--------\n");
     printf("session_id: %s\n", response.session_id);
@@ -83,11 +86,6 @@ void answer_mcq(state_t state) {
     printf("score: %d\n", response.score);
     printf("total_questions: %d\n", response.total_questions);
     printf("new_difficulty: %d\n", response.new_difficulty);
-
-    if (!db_update_score(response.total_questions, response.score,
-                         state.session_id)) {
-      fprintf(stderr, ANSI_FG_RED "FAILED to update score" ANSI_RESET "\n");
-    }
   }
 
   //=============
@@ -97,5 +95,5 @@ void answer_mcq(state_t state) {
   free(json_data);
   cJSON_Delete(json);
   curl_global_cleanup();
-  return;
+  return response;
 }
