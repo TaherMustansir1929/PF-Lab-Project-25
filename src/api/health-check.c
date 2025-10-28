@@ -9,39 +9,59 @@
 
 health_check_response_t parse_response(const char *json_str) {
   health_check_response_t result = {0};
-  vector_init(&result.active_session_ids, sizeof(char *));
+  vector_init(&result.quiz_session_ids, sizeof(user_sessions_t));
+
   cJSON *root = cJSON_Parse(json_str);
   if (!root) {
-    perror("Failed to parse quiz_start_response\n");
+    perror("Failed to parse health_check_response\n");
     return result;
   }
 
   cJSON *status = cJSON_GetObjectItemCaseSensitive(root, "status");
-  cJSON *active_sessions_count =
-      cJSON_GetObjectItemCaseSensitive(root, "active_sessions_count");
-  cJSON *active_sessions_ids =
-      cJSON_GetObjectItemCaseSensitive(root, "active_sessions_ids");
+  cJSON *active_user_count =
+      cJSON_GetObjectItemCaseSensitive(root, "active_user_count");
+  cJSON *quiz_session_count =
+      cJSON_GetObjectItemCaseSensitive(root, "quiz_session_count");
+  cJSON *quiz_session_ids =
+      cJSON_GetObjectItemCaseSensitive(root, "quiz_session_ids");
   cJSON *timestamp = cJSON_GetObjectItemCaseSensitive(root, "timestamp");
 
   if (cJSON_IsString(status))
     result.status = strdup(status->valuestring);
-  if (cJSON_IsNumber(active_sessions_count))
-    result.active_sessions_count = active_sessions_count->valueint;
+  if (cJSON_IsNumber(active_user_count))
+    result.active_user_count = active_user_count->valueint;
+  if (cJSON_IsNumber(quiz_session_count))
+    result.quiz_session_count = quiz_session_count->valueint;
   if (cJSON_IsString(timestamp))
     result.timestamp = strdup(timestamp->valuestring);
 
-  if (cJSON_IsArray(active_sessions_ids)) {
-    cJSON *item = NULL;
-    cJSON_ArrayForEach(item, active_sessions_ids) {
-      if (cJSON_IsString(item) && (item->valuestring != NULL)) {
-        char *string_copy = strdup(item->valuestring);
-        if (string_copy == NULL) {
-          fprintf(stderr, "strdup failed: out of memory\n");
-          cJSON_Delete(active_sessions_ids);
-          vector_free(&result.active_session_ids);
-          return result;
+  // Parse quiz_session_ids as a dictionary mapping user_id to list of
+  // session_ids
+  if (cJSON_IsObject(quiz_session_ids)) {
+    cJSON *user_entry = NULL;
+    cJSON_ArrayForEach(user_entry, quiz_session_ids) {
+      if (cJSON_IsArray(user_entry)) {
+        user_sessions_t user_sessions;
+        user_sessions.user_id =
+            strdup(user_entry->string); // Get the key (user_id)
+        vector_init(&user_sessions.session_ids, sizeof(char *));
+
+        // Iterate through the array of session IDs for this user
+        cJSON *session_id = NULL;
+        cJSON_ArrayForEach(session_id, user_entry) {
+          if (cJSON_IsString(session_id) && (session_id->valuestring != NULL)) {
+            char *session_copy = strdup(session_id->valuestring);
+            if (session_copy == NULL) {
+              fprintf(stderr, "strdup failed: out of memory\n");
+              vector_free(&user_sessions.session_ids);
+              free(user_sessions.user_id);
+              continue;
+            }
+            vector_push_back(&user_sessions.session_ids, &session_copy);
+          }
         }
-        vector_push_back(&result.active_session_ids, &string_copy);
+
+        vector_push_back(&result.quiz_session_ids, &user_sessions);
       }
     }
   }
@@ -68,10 +88,17 @@ void health_check(void) {
 
     printf("\n--------Health Check--------\n");
     printf("Status: %s\n", response.status);
-    printf("active_sessions_count: %d\n", response.active_sessions_count);
-    for (size_t i = 0; i < vector_size(&response.active_session_ids); i++) {
-      char **id = (char **)vector_get(&response.active_session_ids, i);
-      printf("ID (%zu): %s\n", i+1, *id);
+    printf("Active User Count: %d\n", response.active_user_count);
+    printf("Quiz Session Count: %d\n", response.quiz_session_count);
+    printf("Quiz Sessions by User:\n");
+    for (size_t i = 0; i < vector_size(&response.quiz_session_ids); i++) {
+      user_sessions_t *user_sessions =
+          (user_sessions_t *)vector_get(&response.quiz_session_ids, i);
+      printf("  User: %s\n", user_sessions->user_id);
+      for (size_t j = 0; j < vector_size(&user_sessions->session_ids); j++) {
+        char **session_id = (char **)vector_get(&user_sessions->session_ids, j);
+        printf("    Session ID (%zu): %s\n", j + 1, *session_id);
+      }
     }
     printf("Timestamp: %s\n", response.timestamp);
 
@@ -79,11 +106,26 @@ void health_check(void) {
     //===Cleanup===
     //=============
     free(chunk.response);
-    for (size_t i = 0; i < vector_size(&response.active_session_ids); ++i) {
-      char **p_str = (char **)vector_get(&response.active_session_ids, i);
-      free(*p_str);
+
+    // Free all user sessions and their session IDs
+    for (size_t i = 0; i < vector_size(&response.quiz_session_ids); ++i) {
+      user_sessions_t *user_sessions =
+          (user_sessions_t *)vector_get(&response.quiz_session_ids, i);
+
+      // Free each session ID string
+      for (size_t j = 0; j < vector_size(&user_sessions->session_ids); ++j) {
+        char **p_str = (char **)vector_get(&user_sessions->session_ids, j);
+        free(*p_str);
+      }
+
+      // Free the session_ids vector and user_id
+      vector_free(&user_sessions->session_ids);
+      free(user_sessions->user_id);
     }
-    vector_free(&response.active_session_ids);
+
+    vector_free(&response.quiz_session_ids);
+    free(response.status);
+    free(response.timestamp);
     curl_global_cleanup();
   }
 }

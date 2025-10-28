@@ -3,9 +3,9 @@
 #include "main.h"
 #include "requests.h"
 #include <cjson/cJSON.h>
-#include <stdlib.h>
 #include <curl/curl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 end_quiz_response_t parse_end_quiz_response(const char *json_str) {
@@ -49,9 +49,10 @@ end_quiz_response_t parse_end_quiz_response(const char *json_str) {
   return result;
 }
 
-void end_quiz(const char *session_id) {
+void end_quiz(const char *user_id, const char *session_id) {
   char url[255];
-  snprintf(url, sizeof(url), "%s%s/%s", BASE_URL, END_QUIZ_URL, session_id);
+  snprintf(url, sizeof(url), "%s%s/%s/%s", BASE_URL, END_QUIZ_URL, user_id,
+           session_id);
 
   memory_t chunk = get_request(url);
   if (chunk.err != NULL) {

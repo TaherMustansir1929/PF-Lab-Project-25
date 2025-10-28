@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-check_quiz_status_response_t parse_quiz_status_response(const char* json_str) {
+check_quiz_status_response_t parse_quiz_status_response(const char *json_str) {
   check_quiz_status_response_t result = {0};
 
   cJSON *root = cJSON_Parse(json_str);
@@ -20,27 +20,38 @@ check_quiz_status_response_t parse_quiz_status_response(const char* json_str) {
   cJSON *course = cJSON_GetObjectItemCaseSensitive(root, "course");
   cJSON *topic = cJSON_GetObjectItemCaseSensitive(root, "topic");
   cJSON *score = cJSON_GetObjectItemCaseSensitive(root, "score");
-  cJSON *total_questions = cJSON_GetObjectItemCaseSensitive(root, "total_questions");
+  cJSON *total_questions =
+      cJSON_GetObjectItemCaseSensitive(root, "total_questions");
   cJSON *difficulty = cJSON_GetObjectItemCaseSensitive(root, "difficulty");
-  cJSON *current_phase = cJSON_GetObjectItemCaseSensitive(root, "current_phase");
+  cJSON *current_phase =
+      cJSON_GetObjectItemCaseSensitive(root, "current_phase");
   cJSON *created_at = cJSON_GetObjectItemCaseSensitive(root, "created_at");
 
-  if(cJSON_IsString(session_id)) result.session_id = strdup(session_id->valuestring);
-  if(cJSON_IsString(course)) result.course = strdup(course->valuestring);
-  if(cJSON_IsString(topic)) result.topic = strdup(topic->valuestring);
-  if(cJSON_IsNumber(score)) result.score = score->valueint;
-  if(cJSON_IsNumber(total_questions)) result.total_questions = score->valueint;
-  if(cJSON_IsNumber(difficulty)) result.difficulty = difficulty->valueint;
-  if(cJSON_IsString(current_phase)) result.current_phase = strdup(current_phase->valuestring);
-  if(cJSON_IsString(created_at)) result.created_at = strdup(created_at->valuestring);
+  if (cJSON_IsString(session_id))
+    result.session_id = strdup(session_id->valuestring);
+  if (cJSON_IsString(course))
+    result.course = strdup(course->valuestring);
+  if (cJSON_IsString(topic))
+    result.topic = strdup(topic->valuestring);
+  if (cJSON_IsNumber(score))
+    result.score = score->valueint;
+  if (cJSON_IsNumber(total_questions))
+    result.total_questions = score->valueint;
+  if (cJSON_IsNumber(difficulty))
+    result.difficulty = difficulty->valueint;
+  if (cJSON_IsString(current_phase))
+    result.current_phase = strdup(current_phase->valuestring);
+  if (cJSON_IsString(created_at))
+    result.created_at = strdup(created_at->valuestring);
 
   cJSON_Delete(root);
   return result;
 }
 
-void check_quiz_status(const char *session_id) {
+void check_quiz_status(const char *user_id, const char *session_id) {
   char url[255];
-  snprintf(url, 255, "%s%s/%s", BASE_URL, CHECK_QUIZ_STATUS_URL, session_id);
+  snprintf(url, 255, "%s%s/%s/%s", BASE_URL, CHECK_QUIZ_STATUS_URL, user_id,
+           session_id);
   memory_t chunk = get_request(url);
 
   if (chunk.err != NULL) {
@@ -52,7 +63,8 @@ void check_quiz_status(const char *session_id) {
     //====================
     //===Parse Response===
     //====================
-    check_quiz_status_response_t response = parse_quiz_status_response(chunk.response);
+    check_quiz_status_response_t response =
+        parse_quiz_status_response(chunk.response);
 
     printf("\n--------QUIZ STATUS--------\n");
     printf("session_id: %s\n", response.session_id);
@@ -62,7 +74,7 @@ void check_quiz_status(const char *session_id) {
     printf("score: %d\n", response.score);
     printf("total_questions: %d\n", response.total_questions);
     printf("current_phase: %s\n", response.current_phase);
-    printf("created_at: %s\n",response.created_at);
+    printf("created_at: %s\n", response.created_at);
   }
 
   free(chunk.response);

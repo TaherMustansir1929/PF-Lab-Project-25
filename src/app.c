@@ -1,0 +1,937 @@
+#include "gio/gio.h"
+#include <gtk/gtk.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MAX_STUDENTS 100
+#define ID_LENGTH 10
+#define PASSWORD_LENGTH 50
+#define MAX_MCQS 3
+#define OPTION_LENGTH 200
+#define QUESTION_LENGTH 300
+#define COURSE_LENGTH 100
+#define TOPIC_LENGTH 100
+#define DETAILS_LENGTH 500
+
+typedef struct {
+  char student_id[ID_LENGTH];
+  char password[PASSWORD_LENGTH];
+} student_struct;
+
+typedef struct {
+  char question[QUESTION_LENGTH];
+  char option_a[OPTION_LENGTH];
+  char option_b[OPTION_LENGTH];
+  char option_c[OPTION_LENGTH];
+  char option_d[OPTION_LENGTH];
+  char correct_option; // 'A', 'B', 'C', or 'D'
+} mcq_struct;
+
+typedef struct {
+  char course[COURSE_LENGTH];
+  char topic[TOPIC_LENGTH];
+  int current_question;
+  int score;
+} quiz_struct;
+
+typedef struct {
+  double cgpa;
+  char academic_details[DETAILS_LENGTH];
+  char career_goals[DETAILS_LENGTH];
+} profile_struct;
+
+// Global variables
+student_struct students[MAX_STUDENTS];
+int student_count = 0;
+student_struct current_student;
+quiz_struct current_quiz;
+profile_struct current_profile;
+
+// Hardcoded MCQ array
+mcq_struct mcqs[MAX_MCQS] = {
+    {"What is the capital of France?", "London", "Berlin", "Paris", "Madrid",
+     'C'},
+    {"Which programming language is known for system programming?", "Python",
+     "C", "JavaScript", "Ruby", 'B'},
+    {"What does HTML stand for?", "Hyper Text Markup Language",
+     "High Tech Modern Language", "Home Tool Markup Language",
+     "Hyperlinks and Text Markup Language", 'A'}};
+
+GtkWidget *stack;
+GtkWidget *id_entry;
+GtkWidget *password_entry;
+GtkWidget *info_label;
+
+// Quiz widgets
+GtkWidget *course_entry;
+GtkWidget *topic_entry;
+GtkWidget *quiz_setup_box;
+GtkWidget *quiz_content_box;
+GtkWidget *question_label;
+GtkWidget *radio_a, *radio_b, *radio_c, *radio_d;
+
+// Profile analyzer widgets
+GtkWidget *cgpa_entry;
+GtkWidget *academic_details_text;
+GtkWidget *career_goals_text;
+GtkWidget *profile_form_box;
+GtkWidget *profile_feedback_box;
+GtkWidget *feedback_label;
+
+// Loading widgets
+GtkWidget *loading_dialog;
+
+// Function to validate student ID format (e.g., 25K-0119)
+gboolean validate_student_id(const char *id) {
+  int year, num;
+  // Format: ##K-#### (two digits, K, dash, four digits)
+  if (sscanf(id, "%2dK-%4d", &year, &num) == 2) {
+    // Verify the 'K' is in the right position
+    if (strlen(id) == 8 && id[2] == 'K' && id[3] == '-') {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+// Function to find student in array
+int find_student(const char *id) {
+  for (int i = 0; i < student_count; i++) {
+    if (strcmp(students[i].student_id, id) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Function to add new student
+void add_student(const char *id, const char *password) {
+  if (student_count < MAX_STUDENTS) {
+    strncpy(students[student_count].student_id, id, ID_LENGTH - 1);
+    students[student_count].student_id[ID_LENGTH - 1] = '\0';
+    strncpy(students[student_count].password, password, PASSWORD_LENGTH - 1);
+    students[student_count].password[PASSWORD_LENGTH - 1] = '\0';
+    student_count++;
+  }
+}
+
+// Show loading dialog
+void show_loading_dialog(const char *message) {
+  loading_dialog =
+      gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO,
+                             GTK_BUTTONS_NONE, "%s", message);
+  gtk_window_set_title(GTK_WINDOW(loading_dialog), "Loading");
+  gtk_widget_show_all(loading_dialog);
+
+  // Process events to show the dialog
+  while (gtk_events_pending()) {
+    gtk_main_iteration();
+  }
+}
+
+// Close loading dialog
+void close_loading_dialog() {
+  if (loading_dialog) {
+    gtk_widget_destroy(loading_dialog);
+    loading_dialog = NULL;
+  }
+}
+
+// Callback data structures for delayed operations
+typedef struct {
+  char id[ID_LENGTH];
+  char password[PASSWORD_LENGTH];
+  int is_new_student;
+} SignInData;
+
+// Delayed sign-in processing
+gboolean process_signin_delayed(gpointer user_data) {
+  SignInData *data = (SignInData *)user_data;
+
+  close_loading_dialog();
+
+  // Update info label
+  char info_text[200];
+  if (data->is_new_student) {
+    snprintf(info_text, sizeof(info_text),
+             "Welcome!\n\nStudent ID: %s\nPassword: %s\n\n"
+             "Status: New Student Registered",
+             data->id, data->password);
+  } else {
+    snprintf(info_text, sizeof(info_text),
+             "Welcome Back!\n\nStudent ID: %s\nPassword: %s\n\n"
+             "Status: Existing Student",
+             data->id, data->password);
+  }
+  gtk_label_set_text(GTK_LABEL(info_label), info_text);
+
+  // Switch to dashboard
+  gtk_stack_set_visible_child_name(GTK_STACK(stack), "dashboard");
+
+  g_free(data);
+  return FALSE;
+}
+
+// Callback for sign-in button
+void on_signin_clicked(GtkWidget *widget, gpointer data) {
+  const char *id = gtk_entry_get_text(GTK_ENTRY(id_entry));
+  const char *password = gtk_entry_get_text(GTK_ENTRY(password_entry));
+
+  // Validate ID format
+  if (!validate_student_id(id)) {
+    GtkWidget *dialog = gtk_message_dialog_new(
+        NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
+        "Invalid Student ID format!\nExpected format: ##K-#### (e.g., "
+        "25K-0119)");
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    return;
+  }
+
+  // Check for empty password
+  if (strlen(password) == 0) {
+    GtkWidget *dialog =
+        gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR,
+                               GTK_BUTTONS_OK, "Password cannot be empty!");
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    return;
+  }
+
+  // Search for student
+  int index = find_student(id);
+
+  if (index != -1) {
+    // Student found - verify password
+    if (strcmp(students[index].password, password) == 0) {
+      // Copy to current student
+      strcpy(current_student.student_id, students[index].student_id);
+      strcpy(current_student.password, students[index].password);
+
+      // Show loading
+      show_loading_dialog("Signing in...\nPlease wait...");
+
+      // Prepare callback data
+      SignInData *signin_data = g_new(SignInData, 1);
+      strcpy(signin_data->id, current_student.student_id);
+      strcpy(signin_data->password, current_student.password);
+      signin_data->is_new_student = 0;
+
+      // Clear entries
+      gtk_entry_set_text(GTK_ENTRY(id_entry), "");
+      gtk_entry_set_text(GTK_ENTRY(password_entry), "");
+
+      // Schedule delayed processing (1.5 seconds)
+      g_timeout_add(1500, process_signin_delayed, signin_data);
+    } else {
+      GtkWidget *dialog =
+          gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR,
+                                 GTK_BUTTONS_OK, "Incorrect password!");
+      gtk_dialog_run(GTK_DIALOG(dialog));
+      gtk_widget_destroy(dialog);
+    }
+  } else {
+    // New student - add to array
+    add_student(id, password);
+    strcpy(current_student.student_id, id);
+    strcpy(current_student.password, password);
+
+    // Show loading
+    show_loading_dialog("Creating new account...\nPlease wait...");
+
+    // Prepare callback data
+    SignInData *signin_data = g_new(SignInData, 1);
+    strcpy(signin_data->id, current_student.student_id);
+    strcpy(signin_data->password, current_student.password);
+    signin_data->is_new_student = 1;
+
+    // Clear entries
+    gtk_entry_set_text(GTK_ENTRY(id_entry), "");
+    gtk_entry_set_text(GTK_ENTRY(password_entry), "");
+
+    // Schedule delayed processing (1.5 seconds)
+    g_timeout_add(1500, process_signin_delayed, signin_data);
+  }
+}
+
+// Callbacks for page navigation
+void on_page1_clicked(GtkWidget *widget, gpointer data) {
+  gtk_stack_set_visible_child_name(GTK_STACK(stack), "page1");
+}
+
+void on_page2_clicked(GtkWidget *widget, gpointer data) {
+  gtk_stack_set_visible_child_name(GTK_STACK(stack), "page2");
+}
+
+void on_back_clicked(GtkWidget *widget, gpointer data) {
+  gtk_stack_set_visible_child_name(GTK_STACK(stack), "dashboard");
+}
+
+void on_logout_clicked(GtkWidget *widget, gpointer data) {
+  memset(&current_student, 0, sizeof(student_struct));
+  gtk_stack_set_visible_child_name(GTK_STACK(stack), "signup");
+}
+
+// Quiz functions
+void display_question() {
+  if (current_quiz.current_question >= MAX_MCQS) {
+    return;
+  }
+
+  mcq_struct *mcq = &mcqs[current_quiz.current_question];
+
+  char question_text[400];
+  snprintf(question_text, sizeof(question_text),
+           "Course: %s | Topic: %s | Question %d of %d\n\n%s",
+           current_quiz.course, current_quiz.topic,
+           current_quiz.current_question + 1, MAX_MCQS, mcq->question);
+  gtk_label_set_text(GTK_LABEL(question_label), question_text);
+
+  gtk_button_set_label(GTK_BUTTON(radio_a), mcq->option_a);
+  gtk_button_set_label(GTK_BUTTON(radio_b), mcq->option_b);
+  gtk_button_set_label(GTK_BUTTON(radio_c), mcq->option_c);
+  gtk_button_set_label(GTK_BUTTON(radio_d), mcq->option_d);
+
+  // Reset radio buttons
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(radio_a), FALSE);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(radio_b), FALSE);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(radio_c), FALSE);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(radio_d), FALSE);
+}
+
+// Delayed quiz start
+gboolean start_quiz_delayed(gpointer user_data) {
+  close_loading_dialog();
+
+  // Show quiz content
+  gtk_widget_hide(quiz_setup_box);
+  gtk_widget_show_all(quiz_content_box);
+
+  display_question();
+
+  return FALSE;
+}
+
+void on_start_quiz_clicked(GtkWidget *widget, gpointer data) {
+  const char *course = gtk_entry_get_text(GTK_ENTRY(course_entry));
+  const char *topic = gtk_entry_get_text(GTK_ENTRY(topic_entry));
+
+  if (strlen(course) == 0 || strlen(topic) == 0) {
+    GtkWidget *dialog = gtk_message_dialog_new(
+        NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
+        "Please enter both course and topic!");
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    return;
+  }
+
+  // Initialize quiz
+  strncpy(current_quiz.course, course, COURSE_LENGTH - 1);
+  current_quiz.course[COURSE_LENGTH - 1] = '\0';
+  strncpy(current_quiz.topic, topic, TOPIC_LENGTH - 1);
+  current_quiz.topic[TOPIC_LENGTH - 1] = '\0';
+  current_quiz.current_question = 0;
+  current_quiz.score = 0;
+
+  // Show loading
+  show_loading_dialog("Loading quiz...\nPreparing questions...");
+
+  // Schedule delayed quiz start (2 seconds)
+  g_timeout_add(2000, start_quiz_delayed, NULL);
+}
+
+void on_submit_answer_clicked(GtkWidget *widget, gpointer data) {
+  char selected_option = '\0';
+
+  if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(radio_a))) {
+    selected_option = 'A';
+  } else if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(radio_b))) {
+    selected_option = 'B';
+  } else if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(radio_c))) {
+    selected_option = 'C';
+  } else if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(radio_d))) {
+    selected_option = 'D';
+  }
+
+  if (selected_option == '\0') {
+    GtkWidget *dialog =
+        gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING,
+                               GTK_BUTTONS_OK, "Please select an option!");
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    return;
+  }
+
+  // Check answer
+  mcq_struct *mcq = &mcqs[current_quiz.current_question];
+  gboolean is_correct = (selected_option == mcq->correct_option);
+
+  if (is_correct) {
+    current_quiz.score++;
+  }
+
+  // Show feedback
+  char feedback[200];
+  if (is_correct) {
+    snprintf(feedback, sizeof(feedback),
+             "✓ Correct!\n\nYour answer: %c\nScore: %d/%d", selected_option,
+             current_quiz.score, current_quiz.current_question + 1);
+  } else {
+    snprintf(
+        feedback, sizeof(feedback),
+        "✗ Incorrect!\n\nYour answer: %c\nCorrect answer: %c\nScore: %d/%d",
+        selected_option, mcq->correct_option, current_quiz.score,
+        current_quiz.current_question + 1);
+  }
+
+  GtkWidget *dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL,
+                                             is_correct ? GTK_MESSAGE_INFO
+                                                        : GTK_MESSAGE_WARNING,
+                                             GTK_BUTTONS_OK, "%s", feedback);
+  gtk_dialog_run(GTK_DIALOG(dialog));
+  gtk_widget_destroy(dialog);
+
+  // Move to next question
+  current_quiz.current_question++;
+
+  if (current_quiz.current_question >= MAX_MCQS) {
+    // Quiz finished
+    char final_msg[200];
+    snprintf(final_msg, sizeof(final_msg),
+             "Quiz Completed!\n\nFinal Score: %d/%d\n\nCourse: %s\nTopic: %s",
+             current_quiz.score, MAX_MCQS, current_quiz.course,
+             current_quiz.topic);
+
+    GtkWidget *final_dialog =
+        gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO,
+                               GTK_BUTTONS_OK, "%s", final_msg);
+    gtk_dialog_run(GTK_DIALOG(final_dialog));
+    gtk_widget_destroy(final_dialog);
+
+    // Reset quiz
+    gtk_widget_hide(quiz_content_box);
+    gtk_widget_show_all(quiz_setup_box);
+    gtk_entry_set_text(GTK_ENTRY(course_entry), "");
+    gtk_entry_set_text(GTK_ENTRY(topic_entry), "");
+  } else {
+    display_question();
+  }
+}
+
+void on_end_quiz_clicked(GtkWidget *widget, gpointer data) {
+  char confirm_msg[200];
+  snprintf(confirm_msg, sizeof(confirm_msg),
+           "Are you sure you want to end the quiz?\n\nCurrent Score: %d/%d",
+           current_quiz.score, current_quiz.current_question);
+
+  GtkWidget *dialog =
+      gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION,
+                             GTK_BUTTONS_YES_NO, "%s", confirm_msg);
+
+  int response = gtk_dialog_run(GTK_DIALOG(dialog));
+  gtk_widget_destroy(dialog);
+
+  if (response == GTK_RESPONSE_YES) {
+    // Reset quiz UI
+    gtk_widget_hide(quiz_content_box);
+    gtk_widget_show_all(quiz_setup_box);
+    gtk_entry_set_text(GTK_ENTRY(course_entry), "");
+    gtk_entry_set_text(GTK_ENTRY(topic_entry), "");
+
+    // Go back to dashboard
+    gtk_stack_set_visible_child_name(GTK_STACK(stack), "dashboard");
+  }
+}
+
+// Profile analyzer functions
+typedef struct {
+  char feedback[2000];
+} ProfileFeedbackData;
+
+// Delayed profile feedback display
+gboolean show_profile_feedback_delayed(gpointer user_data) {
+  ProfileFeedbackData *data = (ProfileFeedbackData *)user_data;
+
+  close_loading_dialog();
+
+  gtk_label_set_text(GTK_LABEL(feedback_label), data->feedback);
+
+  // Show feedback
+  gtk_widget_hide(profile_form_box);
+  gtk_widget_show_all(profile_feedback_box);
+
+  g_free(data);
+  return FALSE;
+}
+
+void on_submit_profile_clicked(GtkWidget *widget, gpointer data) {
+  const char *cgpa_str = gtk_entry_get_text(GTK_ENTRY(cgpa_entry));
+
+  GtkTextBuffer *buffer;
+  GtkTextIter start, end;
+
+  // Get academic details
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(academic_details_text));
+  gtk_text_buffer_get_bounds(buffer, &start, &end);
+  char *academic_details =
+      gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+
+  // Get career goals
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(career_goals_text));
+  gtk_text_buffer_get_bounds(buffer, &start, &end);
+  char *career_goals = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+
+  // Validate inputs
+  if (strlen(cgpa_str) == 0 || strlen(academic_details) == 0 ||
+      strlen(career_goals) == 0) {
+    GtkWidget *dialog =
+        gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR,
+                               GTK_BUTTONS_OK, "Please fill in all fields!");
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    g_free(academic_details);
+    g_free(career_goals);
+    return;
+  }
+
+  // Parse CGPA
+  current_profile.cgpa = atof(cgpa_str);
+
+  if (current_profile.cgpa < 0.0 || current_profile.cgpa > 4.0) {
+    GtkWidget *dialog = gtk_message_dialog_new(
+        NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
+        "CGPA must be between 0.0 and 4.0!");
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    g_free(academic_details);
+    g_free(career_goals);
+    return;
+  }
+
+  strncpy(current_profile.academic_details, academic_details,
+          DETAILS_LENGTH - 1);
+  current_profile.academic_details[DETAILS_LENGTH - 1] = '\0';
+  strncpy(current_profile.career_goals, career_goals, DETAILS_LENGTH - 1);
+  current_profile.career_goals[DETAILS_LENGTH - 1] = '\0';
+
+  g_free(academic_details);
+  g_free(career_goals);
+
+  // Generate feedback
+  char feedback[2000];
+  char performance[100], strengths[300], weaknesses[300], advice[500];
+
+  // Determine performance based on CGPA
+  if (current_profile.cgpa >= 3.5) {
+    strcpy(performance, "Excellent");
+    strcpy(strengths,
+           "Strong academic foundation, demonstrated excellence in coursework, "
+           "highly competitive for advanced opportunities");
+    strcpy(weaknesses,
+           "May benefit from gaining practical industry experience, consider "
+           "leadership roles in academic projects");
+    strcpy(advice, "Continue your outstanding work! Focus on research "
+                   "opportunities, internships at top companies, and consider "
+                   "graduate studies. Your strong CGPA opens doors to "
+                   "prestigious programs and competitive positions.");
+  } else if (current_profile.cgpa >= 3.0) {
+    strcpy(performance, "Very Good");
+    strcpy(strengths, "Solid academic performance, good understanding of core "
+                      "concepts, well-prepared for professional roles");
+    strcpy(weaknesses, "Room for improvement in challenging courses, focus on "
+                       "mastering difficult subjects");
+    strcpy(advice,
+           "Build on your solid foundation by taking advanced courses and "
+           "working on real-world projects. Seek internships to gain practical "
+           "experience and consider certifications in your field of interest.");
+  } else if (current_profile.cgpa >= 2.5) {
+    strcpy(performance, "Good");
+    strcpy(strengths, "Consistent effort, adequate grasp of fundamental "
+                      "concepts, showing steady progress");
+    strcpy(weaknesses, "Need to strengthen core subject knowledge, improve "
+                       "study strategies and time management");
+    strcpy(advice, "Focus on understanding fundamental concepts deeply. "
+                   "Consider joining study groups, seeking tutoring, and "
+                   "working on hands-on projects to reinforce learning. Build "
+                   "a strong portfolio to complement your academic record.");
+  } else {
+    strcpy(performance, "Needs Improvement");
+    strcpy(strengths, "Opportunity for significant growth, potential to "
+                      "improve with focused effort");
+    strcpy(weaknesses, "Requires immediate attention to academic performance, "
+                       "strengthen foundational knowledge");
+    strcpy(advice,
+           "Prioritize your studies and seek academic support immediately. "
+           "Meet with advisors, utilize tutoring services, and develop better "
+           "study habits. Focus on incremental improvement and don't hesitate "
+           "to ask for help.");
+  }
+
+  snprintf(feedback, sizeof(feedback),
+           "=== STUDENT PROFILE ANALYSIS ===\n\n"
+           "Student ID: %s\n"
+           "CGPA: %.2f/4.0\n\n"
+           "OVERALL ACADEMIC PERFORMANCE: %s\n\n"
+           "STRENGTHS:\n%s\n\n"
+           "AREAS FOR IMPROVEMENT:\n%s\n\n"
+           "CAREER ADVICE:\n%s\n\n"
+           "Academic Details Analyzed:\n%s\n\n"
+           "Career Goals Noted:\n%s\n\n"
+           "Remember: Your CGPA is just one metric. Focus on building "
+           "practical skills, networking, and gaining real-world experience to "
+           "achieve your career goals!",
+           current_student.student_id, current_profile.cgpa, performance,
+           strengths, weaknesses, advice, current_profile.academic_details,
+           current_profile.career_goals);
+
+  // Show loading
+  show_loading_dialog("Analyzing your profile...\nGenerating feedback...");
+
+  // Prepare callback data
+  ProfileFeedbackData *feedback_data = g_new(ProfileFeedbackData, 1);
+  strcpy(feedback_data->feedback, feedback);
+
+  // Schedule delayed feedback display (2 seconds)
+  g_timeout_add(2000, show_profile_feedback_delayed, feedback_data);
+}
+
+void on_new_analysis_clicked(GtkWidget *widget, gpointer data) {
+  // Reset form
+  gtk_entry_set_text(GTK_ENTRY(cgpa_entry), "");
+
+  GtkTextBuffer *buffer;
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(academic_details_text));
+  gtk_text_buffer_set_text(buffer, "", -1);
+
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(career_goals_text));
+  gtk_text_buffer_set_text(buffer, "", -1);
+
+  // Show form
+  gtk_widget_hide(profile_feedback_box);
+  gtk_widget_show_all(profile_form_box);
+}
+
+void on_back_to_dashboard_clicked(GtkWidget *widget, gpointer data) {
+  gtk_stack_set_visible_child_name(GTK_STACK(stack), "dashboard");
+}
+
+// Build UI
+void activate(GtkApplication *app, gpointer user_data) {
+  GtkWidget *window;
+  GtkWidget *signup_box, *dashboard_box;
+  GtkWidget *button;
+  GtkWidget *label;
+
+  // Create main window
+  window = gtk_application_window_new(app);
+  gtk_window_set_title(GTK_WINDOW(window), "Student Management System");
+  gtk_window_set_default_size(GTK_WINDOW(window), 500, 400);
+  gtk_container_set_border_width(GTK_CONTAINER(window), 10);
+
+  // Create stack
+  stack = gtk_stack_new();
+  gtk_container_add(GTK_CONTAINER(window), stack);
+
+  // === SIGN UP PAGE ===
+  signup_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_halign(signup_box, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(signup_box, GTK_ALIGN_CENTER);
+
+  label = gtk_label_new(NULL);
+  gtk_label_set_markup(
+      GTK_LABEL(label),
+      "<span size='x-large' weight='bold'>Student Sign In/Sign Up</span>");
+  gtk_box_pack_start(GTK_BOX(signup_box), label, FALSE, FALSE, 20);
+
+  label = gtk_label_new("Student ID (Format: ##K-####):");
+  gtk_box_pack_start(GTK_BOX(signup_box), label, FALSE, FALSE, 0);
+
+  id_entry = gtk_entry_new();
+  gtk_entry_set_placeholder_text(GTK_ENTRY(id_entry), "e.g., 25K-0119");
+  gtk_entry_set_max_length(GTK_ENTRY(id_entry), ID_LENGTH - 1);
+  gtk_box_pack_start(GTK_BOX(signup_box), id_entry, FALSE, FALSE, 0);
+
+  label = gtk_label_new("Password:");
+  gtk_box_pack_start(GTK_BOX(signup_box), label, FALSE, FALSE, 0);
+
+  password_entry = gtk_entry_new();
+  gtk_entry_set_visibility(GTK_ENTRY(password_entry), FALSE);
+  gtk_entry_set_placeholder_text(GTK_ENTRY(password_entry), "Enter password");
+  gtk_entry_set_max_length(GTK_ENTRY(password_entry), PASSWORD_LENGTH - 1);
+  gtk_box_pack_start(GTK_BOX(signup_box), password_entry, FALSE, FALSE, 0);
+
+  button = gtk_button_new_with_label("Sign In / Sign Up");
+  gtk_widget_set_size_request(button, 200, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_signin_clicked), NULL);
+  gtk_box_pack_start(GTK_BOX(signup_box), button, FALSE, FALSE, 10);
+
+  gtk_stack_add_named(GTK_STACK(stack), signup_box, "signup");
+
+  // === DASHBOARD PAGE ===
+  dashboard_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_halign(dashboard_box, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(dashboard_box, GTK_ALIGN_CENTER);
+
+  info_label = gtk_label_new("Student Information");
+  gtk_label_set_justify(GTK_LABEL(info_label), GTK_JUSTIFY_CENTER);
+  gtk_box_pack_start(GTK_BOX(dashboard_box), info_label, FALSE, FALSE, 20);
+
+  GtkWidget *button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_halign(button_box, GTK_ALIGN_CENTER);
+
+  button = gtk_button_new_with_label("Quiz");
+  gtk_widget_set_size_request(button, 120, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_page1_clicked), NULL);
+  gtk_box_pack_start(GTK_BOX(button_box), button, FALSE, FALSE, 0);
+
+  button = gtk_button_new_with_label("Pf. Analyzer");
+  gtk_widget_set_size_request(button, 120, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_page2_clicked), NULL);
+  gtk_box_pack_start(GTK_BOX(button_box), button, FALSE, FALSE, 0);
+
+  gtk_box_pack_start(GTK_BOX(dashboard_box), button_box, FALSE, FALSE, 0);
+
+  button = gtk_button_new_with_label("Logout");
+  gtk_widget_set_size_request(button, 120, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_logout_clicked), NULL);
+  gtk_box_pack_start(GTK_BOX(dashboard_box), button, FALSE, FALSE, 10);
+
+  gtk_stack_add_named(GTK_STACK(stack), dashboard_box, "dashboard");
+
+  // === PAGE 1 - QUIZ APPLICATION ===
+  GtkWidget *page1_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+  // Quiz setup box (course and topic entry)
+  quiz_setup_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_halign(quiz_setup_box, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(quiz_setup_box, GTK_ALIGN_CENTER);
+
+  label = gtk_label_new(NULL);
+  gtk_label_set_markup(
+      GTK_LABEL(label),
+      "<span size='x-large' weight='bold'>Quiz Application</span>");
+  gtk_box_pack_start(GTK_BOX(quiz_setup_box), label, FALSE, FALSE, 20);
+
+  label = gtk_label_new("Course Name:");
+  gtk_box_pack_start(GTK_BOX(quiz_setup_box), label, FALSE, FALSE, 0);
+
+  course_entry = gtk_entry_new();
+  gtk_entry_set_placeholder_text(GTK_ENTRY(course_entry),
+                                 "e.g., Computer Science");
+  gtk_widget_set_size_request(course_entry, 300, -1);
+  gtk_box_pack_start(GTK_BOX(quiz_setup_box), course_entry, FALSE, FALSE, 0);
+
+  label = gtk_label_new("Topic Name:");
+  gtk_box_pack_start(GTK_BOX(quiz_setup_box), label, FALSE, FALSE, 0);
+
+  topic_entry = gtk_entry_new();
+  gtk_entry_set_placeholder_text(GTK_ENTRY(topic_entry),
+                                 "e.g., Data Structures");
+  gtk_widget_set_size_request(topic_entry, 300, -1);
+  gtk_box_pack_start(GTK_BOX(quiz_setup_box), topic_entry, FALSE, FALSE, 0);
+
+  button = gtk_button_new_with_label("Start Quiz");
+  gtk_widget_set_size_request(button, 200, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_start_quiz_clicked), NULL);
+  gtk_box_pack_start(GTK_BOX(quiz_setup_box), button, FALSE, FALSE, 10);
+
+  button = gtk_button_new_with_label("Back to Dashboard");
+  gtk_widget_set_size_request(button, 200, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_back_clicked), NULL);
+  gtk_box_pack_start(GTK_BOX(quiz_setup_box), button, FALSE, FALSE, 0);
+
+  gtk_box_pack_start(GTK_BOX(page1_container), quiz_setup_box, TRUE, TRUE, 0);
+
+  // Quiz content box (MCQs)
+  quiz_content_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 15);
+  gtk_widget_set_halign(quiz_content_box, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(quiz_content_box, GTK_ALIGN_CENTER);
+  gtk_container_set_border_width(GTK_CONTAINER(quiz_content_box), 20);
+
+  question_label = gtk_label_new("Question will appear here");
+  gtk_label_set_line_wrap(GTK_LABEL(question_label), TRUE);
+  gtk_label_set_max_width_chars(GTK_LABEL(question_label), 60);
+  gtk_label_set_justify(GTK_LABEL(question_label), GTK_JUSTIFY_CENTER);
+  gtk_box_pack_start(GTK_BOX(quiz_content_box), question_label, FALSE, FALSE,
+                     10);
+
+  // Radio buttons for options
+  GtkWidget *options_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_halign(options_box, GTK_ALIGN_START);
+
+  radio_a = gtk_radio_button_new_with_label(NULL, "Option A");
+  gtk_box_pack_start(GTK_BOX(options_box), radio_a, FALSE, FALSE, 0);
+
+  radio_b = gtk_radio_button_new_with_label_from_widget(
+      GTK_RADIO_BUTTON(radio_a), "Option B");
+  gtk_box_pack_start(GTK_BOX(options_box), radio_b, FALSE, FALSE, 0);
+
+  radio_c = gtk_radio_button_new_with_label_from_widget(
+      GTK_RADIO_BUTTON(radio_a), "Option C");
+  gtk_box_pack_start(GTK_BOX(options_box), radio_c, FALSE, FALSE, 0);
+
+  radio_d = gtk_radio_button_new_with_label_from_widget(
+      GTK_RADIO_BUTTON(radio_a), "Option D");
+  gtk_box_pack_start(GTK_BOX(options_box), radio_d, FALSE, FALSE, 0);
+
+  gtk_box_pack_start(GTK_BOX(quiz_content_box), options_box, FALSE, FALSE, 0);
+
+  // Action buttons
+  GtkWidget *quiz_button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_halign(quiz_button_box, GTK_ALIGN_CENTER);
+
+  button = gtk_button_new_with_label("Submit Answer");
+  gtk_widget_set_size_request(button, 150, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_submit_answer_clicked),
+                   NULL);
+  gtk_box_pack_start(GTK_BOX(quiz_button_box), button, FALSE, FALSE, 0);
+
+  button = gtk_button_new_with_label("End Quiz");
+  gtk_widget_set_size_request(button, 150, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_end_quiz_clicked), NULL);
+  gtk_box_pack_start(GTK_BOX(quiz_button_box), button, FALSE, FALSE, 0);
+
+  gtk_box_pack_start(GTK_BOX(quiz_content_box), quiz_button_box, FALSE, FALSE,
+                     10);
+
+  gtk_box_pack_start(GTK_BOX(page1_container), quiz_content_box, TRUE, TRUE, 0);
+  gtk_widget_hide(quiz_content_box);
+
+  gtk_stack_add_named(GTK_STACK(stack), page1_container, "page1");
+
+  // === PAGE 2 - PROFILE ANALYZER ===
+  GtkWidget *page2_container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+  // Profile form box
+  profile_form_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_halign(profile_form_box, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(profile_form_box, GTK_ALIGN_CENTER);
+  gtk_container_set_border_width(GTK_CONTAINER(profile_form_box), 20);
+
+  label = gtk_label_new(NULL);
+  gtk_label_set_markup(
+      GTK_LABEL(label),
+      "<span size='x-large' weight='bold'>Student Profile Analyzer</span>");
+  gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 10);
+
+  label = gtk_label_new("Enter your CGPA (0.0 - 4.0):");
+  gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 0);
+
+  cgpa_entry = gtk_entry_new();
+  gtk_entry_set_placeholder_text(GTK_ENTRY(cgpa_entry), "e.g., 3.5");
+  gtk_widget_set_size_request(cgpa_entry, 300, -1);
+  gtk_box_pack_start(GTK_BOX(profile_form_box), cgpa_entry, FALSE, FALSE, 0);
+
+  label = gtk_label_new("Academic Details (achievements, courses, skills):");
+  gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 5);
+
+  GtkWidget *scrolled1 = gtk_scrolled_window_new(NULL, NULL);
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled1),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_size_request(scrolled1, 400, 80);
+
+  academic_details_text = gtk_text_view_new();
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(academic_details_text),
+                              GTK_WRAP_WORD);
+  gtk_container_add(GTK_CONTAINER(scrolled1), academic_details_text);
+  gtk_box_pack_start(GTK_BOX(profile_form_box), scrolled1, FALSE, FALSE, 0);
+
+  label = gtk_label_new("Future Career Goals:");
+  gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 5);
+
+  GtkWidget *scrolled2 = gtk_scrolled_window_new(NULL, NULL);
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled2),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_size_request(scrolled2, 400, 80);
+
+  career_goals_text = gtk_text_view_new();
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(career_goals_text), GTK_WRAP_WORD);
+  gtk_container_add(GTK_CONTAINER(scrolled2), career_goals_text);
+  gtk_box_pack_start(GTK_BOX(profile_form_box), scrolled2, FALSE, FALSE, 0);
+
+  GtkWidget *profile_button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_halign(profile_button_box, GTK_ALIGN_CENTER);
+
+  button = gtk_button_new_with_label("Analyze Profile");
+  gtk_widget_set_size_request(button, 150, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_submit_profile_clicked),
+                   NULL);
+  gtk_box_pack_start(GTK_BOX(profile_button_box), button, FALSE, FALSE, 0);
+
+  button = gtk_button_new_with_label("Back to Dashboard");
+  gtk_widget_set_size_request(button, 150, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_back_to_dashboard_clicked),
+                   NULL);
+  gtk_box_pack_start(GTK_BOX(profile_button_box), button, FALSE, FALSE, 0);
+
+  gtk_box_pack_start(GTK_BOX(profile_form_box), profile_button_box, FALSE,
+                     FALSE, 10);
+
+  gtk_box_pack_start(GTK_BOX(page2_container), profile_form_box, TRUE, TRUE, 0);
+
+  // Profile feedback box
+  profile_feedback_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_container_set_border_width(GTK_CONTAINER(profile_feedback_box), 20);
+
+  GtkWidget *feedback_scrolled = gtk_scrolled_window_new(NULL, NULL);
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(feedback_scrolled),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+
+  feedback_label = gtk_label_new("Feedback will appear here");
+  gtk_label_set_line_wrap(GTK_LABEL(feedback_label), TRUE);
+  gtk_label_set_selectable(GTK_LABEL(feedback_label), TRUE);
+  gtk_label_set_justify(GTK_LABEL(feedback_label), GTK_JUSTIFY_LEFT);
+  gtk_widget_set_halign(feedback_label, GTK_ALIGN_START);
+  gtk_widget_set_valign(feedback_label, GTK_ALIGN_START);
+  gtk_widget_set_margin_start(feedback_label, 10);
+  gtk_widget_set_margin_end(feedback_label, 10);
+  gtk_widget_set_margin_top(feedback_label, 10);
+  gtk_widget_set_margin_bottom(feedback_label, 10);
+
+  // gtk_scrolled_window_add_with_viewport(GTK_SCROLLED_WINDOW(feedback_scrolled),
+  //                                       feedback_label);
+  gtk_container_add(GTK_CONTAINER(feedback_scrolled), feedback_label);
+  gtk_box_pack_start(GTK_BOX(profile_feedback_box), feedback_scrolled, TRUE,
+                     TRUE, 0);
+
+  GtkWidget *feedback_button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_halign(feedback_button_box, GTK_ALIGN_CENTER);
+
+  button = gtk_button_new_with_label("New Analysis");
+  gtk_widget_set_size_request(button, 150, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_new_analysis_clicked),
+                   NULL);
+  gtk_box_pack_start(GTK_BOX(feedback_button_box), button, FALSE, FALSE, 0);
+
+  button = gtk_button_new_with_label("Back to Dashboard");
+  gtk_widget_set_size_request(button, 150, 40);
+  g_signal_connect(button, "clicked", G_CALLBACK(on_back_to_dashboard_clicked),
+                   NULL);
+  gtk_box_pack_start(GTK_BOX(feedback_button_box), button, FALSE, FALSE, 0);
+
+  gtk_box_pack_start(GTK_BOX(profile_feedback_box), feedback_button_box, FALSE,
+                     FALSE, 10);
+
+  gtk_box_pack_start(GTK_BOX(page2_container), profile_feedback_box, TRUE, TRUE,
+                     0);
+  gtk_widget_hide(profile_feedback_box);
+
+  gtk_stack_add_named(GTK_STACK(stack), page2_container, "page2");
+
+  // Show all widgets
+  gtk_widget_show_all(window);
+}
+
+int main(int argc, char **argv) {
+  GtkApplication *app;
+  int status;
+
+  app = gtk_application_new("com.example.studentapp",
+                            G_APPLICATION_DEFAULT_FLAGS);
+  g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
+  status = g_application_run(G_APPLICATION(app), argc, argv);
+  g_object_unref(app);
+
+  return status;
+}

@@ -49,6 +49,7 @@ void answer_mcq(state_t state) {
 
   cJSON *json = cJSON_CreateObject();
   cJSON_AddStringToObject(json, "session_id", state.session_id);
+  cJSON_AddStringToObject(json, "user_id", state.user_id);
   cJSON_AddStringToObject(json, "answer", answer);
 
   char *json_data = cJSON_PrintUnformatted(json);

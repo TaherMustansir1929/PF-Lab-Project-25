@@ -16,6 +16,6 @@ typedef struct EndQuizResponse {
   final_results_t final_results;
 } end_quiz_response_t;
 
-void end_quiz(const char* session_id);
+void end_quiz(const char *user_id, const char *session_id);
 
 #endif // !END_QUIZ_H

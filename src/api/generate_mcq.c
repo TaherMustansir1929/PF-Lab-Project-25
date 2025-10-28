@@ -1,4 +1,4 @@
-#include "start-quiz.h"
+#include "generate_mcq.h"
 #include "ansi-colors.h"
 #include "db.h"
 #include "requests.h"
@@ -77,7 +77,7 @@ quiz_start_response_t parse_quiz_start_response(const char *json_str) {
   return quiz;
 }
 
-void start_quiz(state_t *state) {
+void generate_mcq(state_t *state) {
   char course[255], topic[255];
   if (state->course && state->topic && strlen(state->course) > 0 &&
       strlen(state->topic)) {
@@ -109,7 +109,7 @@ void start_quiz(state_t *state) {
   cJSON *json = cJSON_CreateObject();
   cJSON_AddStringToObject(json, "course", course);
   cJSON_AddStringToObject(json, "topic", topic);
-  cJSON_AddStringToObject(json, "user_id", state->username);
+  cJSON_AddStringToObject(json, "user_id", state->user_id);
   // Only add session_id if it exists and is not empty
   if (state->session_id && strlen(state->session_id) > 0) {
     cJSON_AddStringToObject(json, "session_id", state->session_id);
@@ -179,7 +179,7 @@ void start_quiz(state_t *state) {
 
     state->session_id = strdup(response.session_id);
 
-    if (!db_insert_quiz(state->username, state->course, state->topic,
+    if (!db_insert_quiz(state->user_id, state->course, state->topic,
                         state->session_id)) {
       fprintf(stderr, "! Failed to save data...\n");
     } else {
