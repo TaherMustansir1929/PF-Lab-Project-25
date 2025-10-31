@@ -65,7 +65,9 @@ answer_mcq_response_t answer_mcq(const char *session_id, const char *user_id,
   printf("\nJSON BEING SENT: %s", json_data);
 
   char url[255];
-  snprintf(url, sizeof(url), "%s%s", BASE_URL, ANSWER_MCQ_URL);
+  const char *env = getenv("C_ENV");
+  snprintf(url, sizeof(url), "%s%s",
+           strcmp(env, "dev") ? BASE_URL_DEV : BASE_URL_PROD, ANSWER_MCQ_URL);
   memory_t chunk = post_request(url, json_data);
 
   if (chunk.err != NULL) {

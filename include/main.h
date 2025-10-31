@@ -5,8 +5,9 @@
 #include <curl/curl.h>
 
 #define HOST "host.docker.internal"
-// #define BASE_URL "https://pf-lab-project-25-python-api.vercel.app"
-#define BASE_URL "http://localhost:8000"
+
+#define BASE_URL_DEV "http://localhost:8000"
+#define BASE_URL_PROD "https://pf-lab-project-25-python-api.vercel.app"
 
 typedef struct State {
   char *session_id;

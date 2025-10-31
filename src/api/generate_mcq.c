@@ -110,7 +110,9 @@ quiz_start_response_t generate_mcq(quiz_t *state, const char *student_id) {
   printf("\n\nJSON BEING SENT: %s\n\n", json_data);
 
   char url[256];
-  snprintf(url, sizeof(url), "%s%s", BASE_URL, START_QUIZ_URL);
+  const char *env = getenv("C_ENV");
+  snprintf(url, sizeof(url), "%s%s",
+           strcmp(env, "dev") ? BASE_URL_DEV : BASE_URL_PROD, START_QUIZ_URL);
   memory_t chunk = post_request(url, json_data);
 
   if (chunk.err != NULL) {

@@ -72,7 +72,9 @@ health_check_response_t parse_response(const char *json_str) {
 
 void health_check(void) {
   char url[256];
-  snprintf(url, sizeof(url), "%s%s", BASE_URL, HEALTH_CHECK_URL);
+  const char *env = getenv("C_ENV");
+  snprintf(url, sizeof(url), "%s%s",
+           strcmp(env, "dev") ? BASE_URL_DEV : BASE_URL_PROD, HEALTH_CHECK_URL);
   memory_t chunk = get_request(url);
 
   if (chunk.err != NULL) {
