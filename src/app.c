@@ -5,10 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ansi-colors.h"
 #include "answer-mcq.h"
 #include "end-quiz.h"
 #include "generate_mcq.h"
 #include "main.h"
+#include "pf-analyzer.h"
 
 // Global variables
 student_t students[MAX_STUDENTS];
@@ -36,8 +38,11 @@ GtkWidget *radio_a, *radio_b, *radio_c, *radio_d;
 
 // Profile analyzer widgets
 GtkWidget *cgpa_entry;
-GtkWidget *academic_details_text;
-GtkWidget *career_goals_text;
+GtkWidget *major_entry;
+GtkWidget *short_term_goals_text;
+GtkWidget *long_term_goals_text;
+GtkWidget *industries_of_interest_text;
+GtkWidget *target_roles_text;
 GtkWidget *profile_form_box;
 GtkWidget *profile_feedback_box;
 GtkWidget *feedback_label;
@@ -548,53 +553,52 @@ void on_end_quiz_clicked(GtkWidget *widget, gpointer data) {
 }
 
 // Profile analyzer functions
-typedef struct {
-  char feedback[2000];
-} ProfileFeedbackData;
-
-// Delayed profile feedback display
-gboolean show_profile_feedback_delayed(gpointer user_data) {
-  ProfileFeedbackData *data = (ProfileFeedbackData *)user_data;
-
-  close_loading_dialog();
-
-  gtk_label_set_text(GTK_LABEL(feedback_label), data->feedback);
-
-  // Show feedback
-  gtk_widget_hide(profile_form_box);
-  gtk_widget_show_all(profile_feedback_box);
-
-  g_free(data);
-  return FALSE;
-}
 
 void on_submit_profile_clicked(GtkWidget *widget, gpointer data) {
+  (void)widget; // Suppress unused parameter warning
+  (void)data;   // Suppress unused parameter warning
+
   const char *cgpa_str = gtk_entry_get_text(GTK_ENTRY(cgpa_entry));
+  const char *major = gtk_entry_get_text(GTK_ENTRY(major_entry));
 
   GtkTextBuffer *buffer;
   GtkTextIter start, end;
 
-  // Get academic details
-  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(academic_details_text));
+  // Get short-term goals
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(short_term_goals_text));
   gtk_text_buffer_get_bounds(buffer, &start, &end);
-  char *academic_details =
+  char *short_term_goals =
       gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 
-  // Get career goals
-  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(career_goals_text));
+  // Get long-term goals
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(long_term_goals_text));
   gtk_text_buffer_get_bounds(buffer, &start, &end);
-  char *career_goals = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+  char *long_term_goals = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+
+  // Get industries of interest
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(industries_of_interest_text));
+  gtk_text_buffer_get_bounds(buffer, &start, &end);
+  char *industries_of_interest =
+      gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+
+  // Get target roles
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(target_roles_text));
+  gtk_text_buffer_get_bounds(buffer, &start, &end);
+  char *target_roles = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
 
   // Validate inputs
-  if (strlen(cgpa_str) == 0 || strlen(academic_details) == 0 ||
-      strlen(career_goals) == 0) {
+  if (strlen(cgpa_str) == 0 || strlen(major) == 0 ||
+      strlen(short_term_goals) == 0 || strlen(long_term_goals) == 0 ||
+      strlen(industries_of_interest) == 0 || strlen(target_roles) == 0) {
     GtkWidget *dialog =
         gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR,
                                GTK_BUTTONS_OK, "Please fill in all fields!");
     gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
-    g_free(academic_details);
-    g_free(career_goals);
+    g_free(short_term_goals);
+    g_free(long_term_goals);
+    g_free(industries_of_interest);
+    g_free(target_roles);
     return;
   }
 
@@ -607,107 +611,105 @@ void on_submit_profile_clicked(GtkWidget *widget, gpointer data) {
         "CGPA must be between 0.0 and 4.0!");
     gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
-    g_free(academic_details);
-    g_free(career_goals);
+    g_free(short_term_goals);
+    g_free(long_term_goals);
+    g_free(industries_of_interest);
+    g_free(target_roles);
     return;
   }
 
-  strncpy(current_profile.academic_details, academic_details,
+  // Store values in current_profile
+  strncpy(current_profile.major, major, DETAILS_LENGTH - 1);
+  current_profile.major[DETAILS_LENGTH - 1] = '\0';
+  strncpy(current_profile.short_term_goals, short_term_goals,
           DETAILS_LENGTH - 1);
-  current_profile.academic_details[DETAILS_LENGTH - 1] = '\0';
-  strncpy(current_profile.career_goals, career_goals, DETAILS_LENGTH - 1);
-  current_profile.career_goals[DETAILS_LENGTH - 1] = '\0';
+  current_profile.short_term_goals[DETAILS_LENGTH - 1] = '\0';
+  strncpy(current_profile.long_term_goals, long_term_goals, DETAILS_LENGTH - 1);
+  current_profile.long_term_goals[DETAILS_LENGTH - 1] = '\0';
+  strncpy(current_profile.industries_of_interest, industries_of_interest,
+          DETAILS_LENGTH - 1);
+  current_profile.industries_of_interest[DETAILS_LENGTH - 1] = '\0';
+  strncpy(current_profile.target_roles, target_roles, DETAILS_LENGTH - 1);
+  current_profile.target_roles[DETAILS_LENGTH - 1] = '\0';
 
-  g_free(academic_details);
-  g_free(career_goals);
+  // Call the API
+  show_loading_dialog("Analyzing your profile...\nPlease wait...");
 
-  // Generate feedback
-  char feedback[2000];
-  char performance[100], strengths[300], weaknesses[300], advice[500];
+  pf_analyzer_request_t request = {
+      .student_id = current_student.student_id,
+      .cgpa = current_profile.cgpa,
+      .major = current_profile.major,
+      .short_term_goals = current_profile.short_term_goals,
+      .long_term_goals = current_profile.long_term_goals,
+      .industries_of_interest = current_profile.industries_of_interest,
+      .target_roles = current_profile.target_roles};
 
-  // Determine performance based on CGPA
-  if (current_profile.cgpa >= 3.5) {
-    strcpy(performance, "Excellent");
-    strcpy(strengths,
-           "Strong academic foundation, demonstrated excellence in coursework, "
-           "highly competitive for advanced opportunities");
-    strcpy(weaknesses,
-           "May benefit from gaining practical industry experience, consider "
-           "leadership roles in academic projects");
-    strcpy(advice, "Continue your outstanding work! Focus on research "
-                   "opportunities, internships at top companies, and consider "
-                   "graduate studies. Your strong CGPA opens doors to "
-                   "prestigious programs and competitive positions.");
-  } else if (current_profile.cgpa >= 3.0) {
-    strcpy(performance, "Very Good");
-    strcpy(strengths, "Solid academic performance, good understanding of core "
-                      "concepts, well-prepared for professional roles");
-    strcpy(weaknesses, "Room for improvement in challenging courses, focus on "
-                       "mastering difficult subjects");
-    strcpy(advice,
-           "Build on your solid foundation by taking advanced courses and "
-           "working on real-world projects. Seek internships to gain practical "
-           "experience and consider certifications in your field of interest.");
-  } else if (current_profile.cgpa >= 2.5) {
-    strcpy(performance, "Good");
-    strcpy(strengths, "Consistent effort, adequate grasp of fundamental "
-                      "concepts, showing steady progress");
-    strcpy(weaknesses, "Need to strengthen core subject knowledge, improve "
-                       "study strategies and time management");
-    strcpy(advice, "Focus on understanding fundamental concepts deeply. "
-                   "Consider joining study groups, seeking tutoring, and "
-                   "working on hands-on projects to reinforce learning. Build "
-                   "a strong portfolio to complement your academic record.");
+  pf_analyzer_response_t response = pf_analyzer(&request);
+
+  close_loading_dialog();
+
+  // Free allocated strings
+  g_free(short_term_goals);
+  g_free(long_term_goals);
+  g_free(industries_of_interest);
+  g_free(target_roles);
+
+  // Check if we got valid feedback
+  if (response.feedback) {
+    // Save response to markdown file
+    if (save_pf_analyzer_response_to_file(&response,
+                                          current_student.student_id) == 0) {
+      printf(ANSI_FG_GREEN "Profile analysis saved successfully!\n" ANSI_RESET);
+    } else {
+      fprintf(stderr, ANSI_FG_YELLOW
+              "Warning: Failed to save profile analysis to file\n" ANSI_RESET);
+    }
+
+    gtk_label_set_text(GTK_LABEL(feedback_label), response.feedback);
+
+    // Show feedback
+    gtk_widget_hide(profile_form_box);
+    gtk_widget_show_all(profile_feedback_box);
+
+    // Free response
+    free_pf_analyzer_response(&response);
   } else {
-    strcpy(performance, "Needs Improvement");
-    strcpy(strengths, "Opportunity for significant growth, potential to "
-                      "improve with focused effort");
-    strcpy(weaknesses, "Requires immediate attention to academic performance, "
-                       "strengthen foundational knowledge");
-    strcpy(advice,
-           "Prioritize your studies and seek academic support immediately. "
-           "Meet with advisors, utilize tutoring services, and develop better "
-           "study habits. Focus on incremental improvement and don't hesitate "
-           "to ask for help.");
+    // Show error
+    char error_msg[500];
+    if (response.message) {
+      snprintf(error_msg, sizeof(error_msg), "Error: %s", response.message);
+      free_pf_analyzer_response(&response);
+    } else {
+      strcpy(error_msg, "Failed to analyze profile. Please try again.");
+    }
+
+    GtkWidget *dialog =
+        gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR,
+                               GTK_BUTTONS_OK, "%s", error_msg);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
   }
-
-  snprintf(feedback, sizeof(feedback),
-           "=== STUDENT PROFILE ANALYSIS ===\n\n"
-           "Student ID: %s\n"
-           "CGPA: %.2f/4.0\n\n"
-           "OVERALL ACADEMIC PERFORMANCE: %s\n\n"
-           "STRENGTHS:\n%s\n\n"
-           "AREAS FOR IMPROVEMENT:\n%s\n\n"
-           "CAREER ADVICE:\n%s\n\n"
-           "Academic Details Analyzed:\n%s\n\n"
-           "Career Goals Noted:\n%s\n\n"
-           "Remember: Your CGPA is just one metric. Focus on building "
-           "practical skills, networking, and gaining real-world experience to "
-           "achieve your career goals!",
-           current_student.student_id, current_profile.cgpa, performance,
-           strengths, weaknesses, advice, current_profile.academic_details,
-           current_profile.career_goals);
-
-  // Show loading
-  show_loading_dialog("Analyzing your profile...\nGenerating feedback...");
-
-  // Prepare callback data
-  ProfileFeedbackData *feedback_data = g_new(ProfileFeedbackData, 1);
-  strcpy(feedback_data->feedback, feedback);
-
-  // Schedule delayed feedback display (2 seconds)
-  g_timeout_add(2000, show_profile_feedback_delayed, feedback_data);
 }
 
 void on_new_analysis_clicked(GtkWidget *widget, gpointer data) {
+  (void)widget; // Suppress unused parameter warning
+  (void)data;   // Suppress unused parameter warning
+
   // Reset form
   gtk_entry_set_text(GTK_ENTRY(cgpa_entry), "");
+  gtk_entry_set_text(GTK_ENTRY(major_entry), "");
 
   GtkTextBuffer *buffer;
-  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(academic_details_text));
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(short_term_goals_text));
   gtk_text_buffer_set_text(buffer, "", -1);
 
-  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(career_goals_text));
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(long_term_goals_text));
+  gtk_text_buffer_set_text(buffer, "", -1);
+
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(industries_of_interest_text));
+  gtk_text_buffer_set_text(buffer, "", -1);
+
+  buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(target_roles_text));
   gtk_text_buffer_set_text(buffer, "", -1);
 
   // Show form
@@ -923,35 +925,72 @@ void activate(GtkApplication *app, gpointer user_data) {
 
   cgpa_entry = gtk_entry_new();
   gtk_entry_set_placeholder_text(GTK_ENTRY(cgpa_entry), "e.g., 3.5");
-  gtk_widget_set_size_request(cgpa_entry, 300, -1);
+  gtk_widget_set_size_request(cgpa_entry, 400, -1);
   gtk_box_pack_start(GTK_BOX(profile_form_box), cgpa_entry, FALSE, FALSE, 0);
 
-  label = gtk_label_new("Academic Details (achievements, courses, skills):");
+  label = gtk_label_new("Major/Field of Study:");
+  gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 5);
+
+  major_entry = gtk_entry_new();
+  gtk_entry_set_placeholder_text(GTK_ENTRY(major_entry),
+                                 "e.g., Computer Science");
+  gtk_widget_set_size_request(major_entry, 400, -1);
+  gtk_box_pack_start(GTK_BOX(profile_form_box), major_entry, FALSE, FALSE, 0);
+
+  label = gtk_label_new("Short-term Career Goals:");
   gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 5);
 
   GtkWidget *scrolled1 = gtk_scrolled_window_new(NULL, NULL);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled1),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_widget_set_size_request(scrolled1, 400, 80);
+  gtk_widget_set_size_request(scrolled1, 400, 60);
 
-  academic_details_text = gtk_text_view_new();
-  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(academic_details_text),
+  short_term_goals_text = gtk_text_view_new();
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(short_term_goals_text),
                               GTK_WRAP_WORD);
-  gtk_container_add(GTK_CONTAINER(scrolled1), academic_details_text);
+  gtk_container_add(GTK_CONTAINER(scrolled1), short_term_goals_text);
   gtk_box_pack_start(GTK_BOX(profile_form_box), scrolled1, FALSE, FALSE, 0);
 
-  label = gtk_label_new("Future Career Goals:");
+  label = gtk_label_new("Long-term Career Goals:");
   gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 5);
 
   GtkWidget *scrolled2 = gtk_scrolled_window_new(NULL, NULL);
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled2),
                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_widget_set_size_request(scrolled2, 400, 80);
+  gtk_widget_set_size_request(scrolled2, 400, 60);
 
-  career_goals_text = gtk_text_view_new();
-  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(career_goals_text), GTK_WRAP_WORD);
-  gtk_container_add(GTK_CONTAINER(scrolled2), career_goals_text);
+  long_term_goals_text = gtk_text_view_new();
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(long_term_goals_text),
+                              GTK_WRAP_WORD);
+  gtk_container_add(GTK_CONTAINER(scrolled2), long_term_goals_text);
   gtk_box_pack_start(GTK_BOX(profile_form_box), scrolled2, FALSE, FALSE, 0);
+
+  label = gtk_label_new("Industries of Interest:");
+  gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 5);
+
+  GtkWidget *scrolled3 = gtk_scrolled_window_new(NULL, NULL);
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled3),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_size_request(scrolled3, 400, 60);
+
+  industries_of_interest_text = gtk_text_view_new();
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(industries_of_interest_text),
+                              GTK_WRAP_WORD);
+  gtk_container_add(GTK_CONTAINER(scrolled3), industries_of_interest_text);
+  gtk_box_pack_start(GTK_BOX(profile_form_box), scrolled3, FALSE, FALSE, 0);
+
+  label = gtk_label_new("Target Job Roles/Positions:");
+  gtk_box_pack_start(GTK_BOX(profile_form_box), label, FALSE, FALSE, 5);
+
+  GtkWidget *scrolled4 = gtk_scrolled_window_new(NULL, NULL);
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled4),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_size_request(scrolled4, 400, 60);
+
+  target_roles_text = gtk_text_view_new();
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(target_roles_text), GTK_WRAP_WORD);
+  gtk_container_add(GTK_CONTAINER(scrolled4), target_roles_text);
+  gtk_box_pack_start(GTK_BOX(profile_form_box), scrolled4, FALSE, FALSE, 0);
 
   GtkWidget *profile_button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
   gtk_widget_set_halign(profile_button_box, GTK_ALIGN_CENTER);

@@ -51,9 +51,12 @@ typedef struct Quiz {
 } quiz_t;
 
 typedef struct Profile {
-  double cgpa;
-  char academic_details[DETAILS_LENGTH];
-  char career_goals[DETAILS_LENGTH];
+  float cgpa;
+  char major[DETAILS_LENGTH];
+  char short_term_goals[DETAILS_LENGTH];
+  char long_term_goals[DETAILS_LENGTH];
+  char industries_of_interest[DETAILS_LENGTH];
+  char target_roles[DETAILS_LENGTH];
 } profile_t;
 
 #endif
