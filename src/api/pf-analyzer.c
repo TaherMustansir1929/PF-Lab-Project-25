@@ -166,7 +166,11 @@ int save_pf_analyzer_response_to_file(const pf_analyzer_response_t *response,
   struct stat st = {0};
 
   if (stat(dir_name, &st) == -1) {
+#ifdef _WIN32
+    if (mkdir(dir_name) == -1) {
+#else
     if (mkdir(dir_name, 0755) == -1) {
+#endif
       fprintf(stderr,
               ANSI_FG_RED "Error creating directory '%s': %s\n" ANSI_RESET,
               dir_name, strerror(errno));

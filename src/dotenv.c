@@ -29,7 +29,11 @@ void load_env_file(void) {
     char *value = equal_sign + 1;
 
     // Set environment variable
+#ifdef _WIN32
+    _putenv_s(key, value);
+#else
     setenv(key, value, 1); // 1 = overwrite if exists
+#endif
   }
 
   fclose(file);
