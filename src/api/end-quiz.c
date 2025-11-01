@@ -50,12 +50,19 @@ end_quiz_response_t parse_end_quiz_response(const char *json_str) {
 }
 
 end_quiz_response_t end_quiz(const char *user_id, const char *session_id) {
+  end_quiz_response_t response = {0};
+
+  // Validate inputs
+  if (!user_id || !session_id) {
+    fprintf(stderr, "Error: user_id or session_id is NULL\n");
+    response.message = strdup("Invalid user_id or session_id");
+    return response;
+  }
+
   char url[255];
   snprintf(url, sizeof(url), "%s%s/%s/%s",
            BASE_URL_PROD, END_QUIZ_URL,
            user_id, session_id);
-
-  end_quiz_response_t response = {0};
 
   memory_t chunk = get_request(url);
   if (chunk.err != NULL) {

@@ -52,6 +52,10 @@ memory_t post_request(const char *url, const char *json_data)
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
 
+    // SSL Configuration - disable verification for bundled executable
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+
     // Debugging
     // curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
@@ -98,6 +102,10 @@ memory_t get_request(const char *url){
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+
+    // SSL Configuration - disable verification for bundled executable
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 
     // Debugging
     curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);

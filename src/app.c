@@ -360,6 +360,18 @@ void on_start_quiz_clicked(GtkWidget *widget, gpointer data) {
   quiz_start_response_t response =
       generate_mcq(&current_quiz, current_student.student_id);
 
+  // Check if quiz start was successful
+  if (response.session_id == NULL) {
+    hide_loading_dialog();
+    GtkWidget *dialog = gtk_message_dialog_new(
+        NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
+        "Failed to start quiz!\n\nServer Error: %s",
+        response.message ? response.message : "Unknown error");
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    return;
+  }
+
   current_quiz.session_id = response.session_id;
   current_quiz.current_question = response.question_number;
 
