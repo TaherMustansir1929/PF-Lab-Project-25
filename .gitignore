@@ -29,6 +29,7 @@
 *.dylib
 
 # Executables
+*.exe
 *.out
 *.app
 *.i*86
@@ -62,3 +63,6 @@ main
 
 # database files
 *.db
+
+# dist directory
+dist/*
