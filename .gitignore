@@ -64,6 +64,5 @@ main
 # database files
 *.db
 
-# dist directory / zip files
+# dist directory
 dist/*
-*.zip
