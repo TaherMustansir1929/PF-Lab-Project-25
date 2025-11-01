@@ -51,9 +51,8 @@ end_quiz_response_t parse_end_quiz_response(const char *json_str) {
 
 end_quiz_response_t end_quiz(const char *user_id, const char *session_id) {
   char url[255];
-  const char *env = getenv("C_ENV");
   snprintf(url, sizeof(url), "%s%s/%s/%s",
-           strcmp(env, "dev") ? BASE_URL_DEV : BASE_URL_PROD, END_QUIZ_URL,
+           BASE_URL_PROD, END_QUIZ_URL,
            user_id, session_id);
 
   end_quiz_response_t response = {0};

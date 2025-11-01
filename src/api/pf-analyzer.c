@@ -99,9 +99,8 @@ pf_analyzer_response_t pf_analyzer(const pf_analyzer_request_t *request) {
   printf("\n\nJSON BEING SENT: %s\n\n", json_data);
 
   char url[256];
-  const char *env = getenv("C_ENV");
   snprintf(url, sizeof(url), "%s%s",
-           strcmp(env, "dev") == 0 ? BASE_URL_DEV : BASE_URL_PROD,
+           BASE_URL_PROD,
            PF_ANALYZER_URL);
   memory_t chunk = post_request(url, json_data);
 

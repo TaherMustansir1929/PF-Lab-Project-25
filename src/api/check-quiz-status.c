@@ -50,9 +50,8 @@ check_quiz_status_response_t parse_quiz_status_response(const char *json_str) {
 
 void check_quiz_status(const char *user_id, const char *session_id) {
   char url[255];
-  const char *env = getenv("C_ENV");
   snprintf(url, 255, "%s%s/%s/%s",
-           strcmp(env, "dev") ? BASE_URL_DEV : BASE_URL_PROD,
+           BASE_URL_PROD,
            CHECK_QUIZ_STATUS_URL, user_id, session_id);
   memory_t chunk = get_request(url);
 
