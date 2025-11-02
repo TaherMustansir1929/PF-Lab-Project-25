@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
   pkg-config \
   curl \
   # C libraries
-  libgtk-4-dev \
+  libgtk-3-dev \
   libcurl4-openssl-dev \
   libcjson-dev \
   libssl-dev \
