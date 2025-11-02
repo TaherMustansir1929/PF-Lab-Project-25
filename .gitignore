@@ -66,3 +66,6 @@ main
 
 # dist directory
 dist/*
+
+# profile_analysis directory
+profile_analysis/*

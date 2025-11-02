@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "ansi-colors.h"
 #include "answer-mcq.h"
@@ -11,6 +12,125 @@
 #include "generate_mcq.h"
 #include "main.h"
 #include "pf-analyzer.h"
+
+// Function to convert Markdown to Pango markup
+char* markdown_to_pango(const char* markdown) {
+  if (!markdown) return NULL;
+  
+  size_t len = strlen(markdown);
+  // Allocate generous buffer (3x original size for markup tags)
+  char* result = malloc(len * 3 + 1);
+  if (!result) return NULL;
+  
+  const char* src = markdown;
+  char* dst = result;
+  
+  while (*src) {
+    // Handle headings (# Header)
+    if (*src == '#' && (src == markdown || *(src - 1) == '\n')) {
+      int level = 0;
+      while (*src == '#' && level < 6) {
+        level++;
+        src++;
+      }
+      while (*src == ' ') src++; // Skip spaces after #
+      
+      // Add bold and larger text for headings
+      const char* size_tags[] = {"xx-large", "x-large", "large", "large", "medium", "medium"};
+      int size_idx = (level - 1 < 6) ? level - 1 : 5;
+      dst += sprintf(dst, "<span size='%s' weight='bold'>", size_tags[size_idx]);
+      
+      // Copy until end of line
+      while (*src && *src != '\n') {
+        if (*src == '<') dst += sprintf(dst, "&lt;");
+        else if (*src == '>') dst += sprintf(dst, "&gt;");
+        else if (*src == '&') dst += sprintf(dst, "&amp;");
+        else *dst++ = *src;
+        src++;
+      }
+      dst += sprintf(dst, "</span>");
+      if (*src == '\n') {
+        *dst++ = '\n';
+        src++;
+      }
+      continue;
+    }
+    
+    // Handle bold (**text** or __text__)
+    if ((*src == '*' && *(src + 1) == '*') || (*src == '_' && *(src + 1) == '_')) {
+      char marker = *src;
+      src += 2;
+      dst += sprintf(dst, "<b>");
+      while (*src && !(*src == marker && *(src + 1) == marker)) {
+        if (*src == '<') dst += sprintf(dst, "&lt;");
+        else if (*src == '>') dst += sprintf(dst, "&gt;");
+        else if (*src == '&') dst += sprintf(dst, "&amp;");
+        else *dst++ = *src;
+        src++;
+      }
+      dst += sprintf(dst, "</b>");
+      if (*src == marker && *(src + 1) == marker) src += 2;
+      continue;
+    }
+    
+    // Handle italic (*text* or _text_)
+    if (*src == '*' || *src == '_') {
+      char marker = *src;
+      src++;
+      dst += sprintf(dst, "<i>");
+      while (*src && *src != marker) {
+        if (*src == '<') dst += sprintf(dst, "&lt;");
+        else if (*src == '>') dst += sprintf(dst, "&gt;");
+        else if (*src == '&') dst += sprintf(dst, "&amp;");
+        else *dst++ = *src;
+        src++;
+      }
+      dst += sprintf(dst, "</i>");
+      if (*src == marker) src++;
+      continue;
+    }
+    
+    // Handle bullet points (- item or * item)
+    if ((*src == '-' || *src == '*') && (src == markdown || *(src - 1) == '\n') && *(src + 1) == ' ') {
+      src += 2; // Skip marker and space
+      dst += sprintf(dst, "  • ");
+      continue;
+    }
+    
+    // Handle numbered lists (1. item)
+    if (isdigit(*src) && (src == markdown || *(src - 1) == '\n')) {
+      const char* num_start = src;
+      while (isdigit(*src)) src++;
+      if (*src == '.' && *(src + 1) == ' ') {
+        // Copy the number
+        while (num_start < src) *dst++ = *num_start++;
+        *dst++ = '.';
+        src += 2; // Skip '. '
+        continue;
+      } else {
+        // Not a list, reset and copy normally
+        src = num_start;
+      }
+    }
+    
+    // Escape special XML characters
+    if (*src == '<') {
+      dst += sprintf(dst, "&lt;");
+      src++;
+    } else if (*src == '>') {
+      dst += sprintf(dst, "&gt;");
+      src++;
+    } else if (*src == '&') {
+      dst += sprintf(dst, "&amp;");
+      src++;
+    } else {
+      *dst++ = *src++;
+    }
+  }
+  
+  *dst = '\0';
+  return result;
+}
 
 // Global variables
 student_t students[MAX_STUDENTS];
@@ -669,15 +789,46 @@ void on_submit_profile_clicked(GtkWidget *widget, gpointer data) {
   // Check if we got valid feedback
   if (response.feedback) {
     // Save response to markdown file
-    if (save_pf_analyzer_response_to_file(&response,
-                                          current_student.student_id) == 0) {
+    int save_result = save_pf_analyzer_response_to_file(&response,
+                                          current_student.student_id);
+    
+    // Convert markdown feedback to Pango markup
+    char* pango_feedback = markdown_to_pango(response.feedback);
+    
+    // Prepare feedback with save notification
+    char *full_feedback = NULL;
+    if (save_result == 0) {
       printf(ANSI_FG_GREEN "Profile analysis saved successfully!\n" ANSI_RESET);
+      
+      if (pango_feedback) {
+        // Add bold notification at the top of feedback
+        const char* notification = "<b>✓ Your Profile Analysis has been saved at \"./profile_analysis/\" folder</b>\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        size_t notification_len = strlen(notification);
+        size_t feedback_len = strlen(pango_feedback);
+        full_feedback = malloc(notification_len + feedback_len + 1);
+        
+        if (full_feedback) {
+          strcpy(full_feedback, notification);
+          strcat(full_feedback, pango_feedback);
+          gtk_label_set_markup(GTK_LABEL(feedback_label), full_feedback);
+          free(full_feedback);
+        } else {
+          gtk_label_set_markup(GTK_LABEL(feedback_label), pango_feedback);
+        }
+        free(pango_feedback);
+      } else {
+        gtk_label_set_text(GTK_LABEL(feedback_label), response.feedback);
+      }
     } else {
       fprintf(stderr, ANSI_FG_YELLOW
               "Warning: Failed to save profile analysis to file\n" ANSI_RESET);
+      if (pango_feedback) {
+        gtk_label_set_markup(GTK_LABEL(feedback_label), pango_feedback);
+        free(pango_feedback);
+      } else {
+        gtk_label_set_text(GTK_LABEL(feedback_label), response.feedback);
+      }
     }
-
-    gtk_label_set_text(GTK_LABEL(feedback_label), response.feedback);
 
     // Show feedback
     gtk_widget_hide(profile_form_box);
@@ -1047,6 +1198,7 @@ void activate(GtkApplication *app, gpointer user_data) {
   gtk_label_set_line_wrap(GTK_LABEL(feedback_label), TRUE);
   gtk_label_set_selectable(GTK_LABEL(feedback_label), TRUE);
   gtk_label_set_justify(GTK_LABEL(feedback_label), GTK_JUSTIFY_LEFT);
+  gtk_label_set_use_markup(GTK_LABEL(feedback_label), TRUE);
   gtk_widget_set_halign(feedback_label, GTK_ALIGN_START);
   gtk_widget_set_valign(feedback_label, GTK_ALIGN_START);
   gtk_widget_set_margin_start(feedback_label, 10);
