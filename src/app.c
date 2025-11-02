@@ -297,12 +297,12 @@ void display_question() {
 
   mcq_t *mcq = &mcqs[mcq_count];
 
-  char question_text[400];
+  char question_text[500];
   snprintf(question_text, sizeof(question_text),
-           "Course: %s | Topic: %s | Question %d of %d\n\n%s",
+           "Course: %s | Topic: %s | Question %d of %d\n\n<b>%s</b>",
            current_quiz.course, current_quiz.topic,
            current_quiz.current_question + 1, MAX_MCQS, mcq->question);
-  gtk_label_set_text(GTK_LABEL(question_label), question_text);
+  gtk_label_set_markup(GTK_LABEL(question_label), question_text);
 
   gtk_button_set_label(GTK_BUTTON(radio_a), mcq->option_a);
   gtk_button_set_label(GTK_BUTTON(radio_b), mcq->option_b);
@@ -362,7 +362,7 @@ void on_start_quiz_clicked(GtkWidget *widget, gpointer data) {
 
   // Check if quiz start was successful
   if (response.session_id == NULL) {
-    hide_loading_dialog();
+    close_loading_dialog();
     GtkWidget *dialog = gtk_message_dialog_new(
         NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
         "Failed to start quiz!\n\nServer Error: %s",
@@ -742,9 +742,18 @@ void activate(GtkApplication *app, gpointer user_data) {
 
   // Create main window
   window = gtk_application_window_new(app);
-  gtk_window_set_title(GTK_WINDOW(window), "Student Management System");
+  gtk_window_set_title(GTK_WINDOW(window), "Astrogon");
   gtk_window_set_default_size(GTK_WINDOW(window), 500, 400);
   gtk_container_set_border_width(GTK_CONTAINER(window), 10);
+
+  // Set window icon (provide path to your icon file)
+  GError *error = NULL;
+  if (!gtk_window_set_default_icon_from_file("assets/icon.png", &error)) {
+    if (error) {
+      g_warning("Failed to load default icon: %s", error->message);
+      g_error_free(error);
+    }
+  }
 
   // Create stack
   stack = gtk_stack_new();
@@ -869,7 +878,9 @@ void activate(GtkApplication *app, gpointer user_data) {
   question_label = gtk_label_new("Question will appear here");
   gtk_label_set_line_wrap(GTK_LABEL(question_label), TRUE);
   gtk_label_set_max_width_chars(GTK_LABEL(question_label), 60);
-  gtk_label_set_justify(GTK_LABEL(question_label), GTK_JUSTIFY_CENTER);
+  gtk_label_set_justify(GTK_LABEL(question_label), GTK_JUSTIFY_LEFT);
+  gtk_widget_set_halign(question_label, GTK_ALIGN_START);
+  gtk_label_set_use_markup(GTK_LABEL(question_label), TRUE);
   gtk_box_pack_start(GTK_BOX(quiz_content_box), question_label, FALSE, FALSE,
                      10);
 
