@@ -802,7 +802,7 @@ void on_submit_profile_clicked(GtkWidget *widget, gpointer data) {
       
       if (pango_feedback) {
         // Add bold notification at the top of feedback
-        const char* notification = "<b>✓ Your Profile Analysis has been saved at \"./profile_analysis/\" folder</b>\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        const char* notification = "<b>✓ Your Profile Analysis has been saved at \"astrogon/profile_analysis/\" folder</b>\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
         size_t notification_len = strlen(notification);
         size_t feedback_len = strlen(pango_feedback);
         full_feedback = malloc(notification_len + feedback_len + 1);
